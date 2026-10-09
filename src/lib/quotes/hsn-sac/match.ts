@@ -160,12 +160,12 @@ function isConfident(chosen: Scored, others: Scored[]): boolean {
 export function suggestCodes(name: string, kind: ItemKind): CodeSuggestions {
   const found = rank(name, kind);
   const asWork = kind === "Goods" && soundsLikeService(name);
-  if (found && !asWork && isConfident(found.chosen, found.others)) return { best: suggestion(found.chosen), others: found.others.map(suggestion), switchTo: null };
+  if (found && !asWork) return { best: suggestion(found.chosen), others: found.others.map(suggestion), switchTo: null };
   const near = found ? [found.chosen, ...found.others].slice(0, MAX_OTHERS).map(suggestion) : [];
   // Nothing fits as this kind: if the name is clearly an item of the other kind, say so (a Service whose name is a thing; Goods whose name is work done, or nothing at all as Goods)
   const elsewhere = rank(name, OTHER_KIND[kind]);
   const workLike = soundsLikeService(name);
   const rightKind = kind === "Service" ? !workLike : workLike || !found;
-  const switchTo = elsewhere && rightKind && isConfident(elsewhere.chosen, elsewhere.others) ? { kind: OTHER_KIND[kind], best: suggestion(elsewhere.chosen) } : null;
+  const switchTo = elsewhere && rightKind ? { kind: OTHER_KIND[kind], best: suggestion(elsewhere.chosen) } : null;
   return { best: null, others: near, switchTo };
 }

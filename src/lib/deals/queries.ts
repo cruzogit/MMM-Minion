@@ -106,14 +106,15 @@ async function buildDealWhere(params: DealListParams): Promise<Prisma.DealWhereI
 
 export async function listDeals(params: DealListParams) {
   const page = params.page ?? 1;
+  const limit = params.limit ?? PAGE_SIZE;
   const where = await buildDealWhere(params);
   const [rows, filtered, total] = await Promise.all([
     prisma.deal.findMany({
       where,
       select: dealSelect,
       orderBy: orderBy(params.sort, params.dir === "asc" ? "asc" : "desc"),
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
+      skip: (page - 1) * limit,
+      take: limit,
     }),
     prisma.deal.count({ where }),
     prisma.deal.count({ where: isConvertedView(params) ? convertedDeals : normalDeals }), // Total Deals: the deals of the view that is open
@@ -122,8 +123,8 @@ export async function listDeals(params: DealListParams) {
     rows: rows.map(toDealRow),
     summary: { total, showing: filtered },
     page,
-    pageCount: Math.max(1, Math.ceil(filtered / PAGE_SIZE)),
-    pageSize: PAGE_SIZE,
+    pageCount: Math.max(1, Math.ceil(filtered / limit)),
+    pageSize: limit,
   };
 }
 

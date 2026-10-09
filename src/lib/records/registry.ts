@@ -626,7 +626,7 @@ const CUSTOMER: ModuleDef = {
   idPrefix: "CUS",
   idLabel: "Customer Number",
   counterKey: CUSTOMER_COUNTER,
-  permission: "customers",
+  permission: "leads",
   model: "customer",
   table: "Customer",
   entityType: "Customer",

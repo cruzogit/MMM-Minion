@@ -113,6 +113,7 @@ export const attachmentCompleteSchema = z.object({ ids: z.array(z.string().min(1
 export const followUpSchema = z
   .object({
     notes: z.string().trim().min(1, "Follow-up notes are required").max(FOLLOWUP_NOTES_MAX),
+    taskName: z.string().trim().max(100).optional().nullable(),
     nextDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date").optional().nullable(),
     nextTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a valid time").optional().nullable(),
     files: z.array(uploadFileSchema).min(1, "Select at least one file").max(MAX_FOLLOWUP_FILES),

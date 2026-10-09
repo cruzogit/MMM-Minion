@@ -151,6 +151,7 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
   const [phase, setPhase] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [confirmPhoneWarning, setConfirmPhoneWarning] = useState(false);
   const body = useRef<HTMLDivElement>(null);
 
   const fieldMap = useMemo(() => new Map(options.fields.map(f => [f.key, f])), [options.fields]);
@@ -163,6 +164,27 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
   const set = <K extends keyof Values>(k: K, value: Values[K]) => {
     setV(cur => ({ ...cur, [k]: value }));
     if (errors[k]) setErrors(e => ({ ...e, [k]: undefined }));
+  };
+
+  const handleRequirementChange = (req: string) => {
+    set('exactRequirement', req);
+    if (!req || req.trim().length < 3) return;
+    
+    const lowerReq = req.toLowerCase().trim();
+    // Find the first subcategory where either the subcategory name contains the typed text,
+    // or the typed text contains the subcategory name.
+    const match = options.subcategories.find(sub => {
+      const subLabel = sub.label.toLowerCase();
+      return subLabel.includes(lowerReq) || lowerReq.includes(subLabel);
+    });
+
+    if (match) {
+      setV(cur => {
+        if (cur.mainCategoryId === match.parentId && cur.subcategoryId === match.id) return cur;
+        return { ...cur, mainCategoryId: match.parentId ?? '', subcategoryId: match.id };
+      });
+      setErrors(x => ({ ...x, mainCategoryId: undefined, subcategoryId: undefined }));
+    }
   };
 
   // Edit: load the files that are already attached
@@ -267,8 +289,8 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
     if (failed.length) throw new Error(failed[0].reason ?? 'A file could not be verified');
   };
 
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const save = async (e?: React.FormEvent | null, force: boolean = false) => {
+    if (e) e.preventDefault();
     setFormError('');
     const found = validate();
     const foundCustom = validateCustom();
@@ -281,6 +303,22 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
     if (queue.items.length && !storageReady) { setFormError('File storage is not configured yet, so files cannot be attached. Remove the files, or ask your administrator to set it up.'); return; }
     if (queue.processing) { setFormError('Images are still being processed. Please wait a moment and save again.'); return; }
     if (queue.hasErrors) { setFormError('Some files could not be used. Remove the files marked in red, then save again.'); return; }
+
+    if (!force && mode === 'create') {
+      setSaving(true);
+      setPhase('Checking contact number…');
+      try {
+        const res = await callApi<{exists: boolean}>(`/api/leads/check-phone?phone=${encodeURIComponent(v.contactNumber)}`, 'GET');
+        if (res.exists) {
+          setSaving(false);
+          setPhase('');
+          setConfirmPhoneWarning(true);
+          return;
+        }
+      } catch (err) {
+        // ignore check failure and proceed
+      }
+    }
 
     setSaving(true);
     setPhase(deal ? 'Saving deal…' : 'Saving lead…');
@@ -367,7 +405,7 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
             </Field>
 
             <Field order={ord('exactRequirement')} label={L('exactRequirement', 'Requirement')} required={R('exactRequirement')} error={errors.exactRequirement}>
-              <input className={`${input} ${ring('exactRequirement')}`} aria-invalid={inv('exactRequirement')} aria-label={L('exactRequirement', 'Requirement')} placeholder="Enter requirement" value={v.exactRequirement} onChange={e => set('exactRequirement', e.target.value)} maxLength={300} />
+              <input className={`${input} ${ring('exactRequirement')}`} aria-invalid={inv('exactRequirement')} aria-label={L('exactRequirement', 'Requirement')} placeholder="Enter requirement" value={v.exactRequirement} onChange={e => handleRequirementChange(e.target.value)} maxLength={300} />
             </Field>
               <Field order={ord('modeOfCustomerId')} label={L('modeOfCustomerId', 'Mode of Customer')} required={R('modeOfCustomerId')} error={errors.modeOfCustomerId}>
                 <select className={`${input} ${ring('modeOfCustomerId')}`} aria-invalid={inv('modeOfCustomerId')} value={v.modeOfCustomerId} onChange={e => set('modeOfCustomerId', e.target.value)}>
@@ -486,6 +524,19 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
             <div className="flex justify-end gap-3 mt-5">
               <button onClick={() => setConfirmDiscard(false)} className="px-4 h-[38px] rounded-md bg-gray-200 text-gray-800 text-[14px]">Keep editing</button>
               <button onClick={onClose} className="px-4 h-[38px] rounded-md bg-[#d9232b] text-white text-[14px]">Discard</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmPhoneWarning && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="phone-warning-title" className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-sm">
+            <h3 id="phone-warning-title" className="text-[17px] font-bold text-[#333]">Contact Number Exists</h3>
+            <p className="text-[14px] text-gray-600 mt-2">This contact number is already saved in an existing lead or deal. Do you still want to add this lead?</p>
+            <div className="flex justify-end gap-3 mt-5">
+              <button onClick={() => setConfirmPhoneWarning(false)} className="px-4 h-[38px] rounded-md bg-gray-200 text-gray-800 text-[14px]">Cancel</button>
+              <button onClick={() => { setConfirmPhoneWarning(false); save(null, true); }} className="px-4 h-[38px] rounded-md bg-black text-white text-[14px]">Okay</button>
             </div>
           </div>
         </div>

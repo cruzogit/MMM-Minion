@@ -18,9 +18,7 @@ export type ModuleDef = { key: string; label: string; group: string };
 
 export const MODULES = [
   { key: "dashboard", label: "Dashboard", group: "General" },
-  { key: "my_work", label: "My Work", group: "General" },
   { key: "leads", label: "Leads", group: "CRM" },
-  { key: "customers", label: "Customers", group: "CRM" },
   { key: "requirements", label: "Requirements", group: "CRM" },
   { key: "quotes", label: "Quotes", group: "CRM" },
   { key: "site_visits", label: "Site Visits", group: "CRM" },
@@ -28,7 +26,6 @@ export const MODULES = [
   { key: "projects", label: "Projects", group: "Delivery" },
   { key: "boq", label: "BOQ", group: "Delivery" },
   { key: "tasks", label: "Tasks", group: "Delivery" },
-  { key: "parks", label: "Parks", group: "Delivery" },
   { key: "vendors", label: "Vendors", group: "Delivery" },
   { key: "purchase", label: "Purchase", group: "Delivery" },
   { key: "ppr", label: "PPR", group: "Delivery" },
@@ -38,9 +35,6 @@ export const MODULES = [
   { key: "employees", label: "Employees", group: "People" },
   { key: "hr", label: "HR", group: "People" },
   { key: "users", label: "Users", group: "People" },
-  { key: "learning", label: "Learning", group: "People" },
-  { key: "rewards", label: "Rewards", group: "People" },
-  { key: "resources", label: "Resources", group: "Other" },
   { key: "reports", label: "Reports", group: "Other" },
   { key: "settings", label: "Settings", group: "Other" },
   { key: "attendance", label: "Attendance", group: "People" }, // a person's own check in / out, movements and monthly calendar
@@ -62,7 +56,7 @@ export function permissionKey(module: string, action: string) {
   return `${module}.${action}`.toLowerCase();
 }
 
-export const CRM_MODULES: ModuleKey[] = ["leads", "customers", "requirements", "quotes", "site_visits", "deals"];
+export const CRM_MODULES: ModuleKey[] = ["leads", "requirements", "quotes", "site_visits", "deals"];
 
 // Route prefix → modules. Viewing the route needs `view` on ANY listed module.
 // Longest prefix wins; routes not listed only require a signed-in user.
@@ -78,15 +72,9 @@ export const ROUTE_MODULES: { prefix: string; modules: ModuleKey[] }[] = [
   { prefix: "/pre-payments", modules: ["ppr"] },
   { prefix: "/payment-collections", modules: ["payments"] },
   { prefix: "/attendance", modules: ["attendance"] },
-  { prefix: "/crm", modules: CRM_MODULES },
   { prefix: "/projects", modules: ["projects", "boq"] },
-  { prefix: "/parks", modules: ["parks"] },
   { prefix: "/tasks", modules: ["tasks"] },
   { prefix: "/team", modules: ["employees"] },
-  { prefix: "/learning", modules: ["learning"] },
-  { prefix: "/rewards", modules: ["rewards"] },
-  { prefix: "/resources", modules: ["resources"] },
-  { prefix: "/my-work", modules: ["my_work"] },
 ];
 
 export function modulesForPath(pathname: string): ModuleKey[] | null {
@@ -104,7 +92,6 @@ export function modulesForPath(pathname: string): ModuleKey[] | null {
 // Sidebar order; an item shows when the user can view any of its modules.
 export const NAV_ITEMS: { label: string; href: string; modules: ModuleKey[] }[] = [
   { label: "HOME", href: "/", modules: ["dashboard"] },
-  { label: "MY WORK", href: "/my-work", modules: ["my_work"] },
   { label: "LEADS", href: "/leads", modules: ["leads"] },
   { label: "DEALS", href: "/deals", modules: ["deals"] },
   { label: "QUOTES", href: "/quotes", modules: ["quotes"] },
@@ -115,14 +102,9 @@ export const NAV_ITEMS: { label: string; href: string; modules: ModuleKey[] }[] 
   { label: "PAYMENT COLLECTION RECORDS", href: "/payment-collections", modules: ["payments"] },
   { label: "ATTENDANCE", href: "/attendance", modules: ["attendance"] },
   { label: "TASKS", href: "/tasks", modules: ["tasks"] },
-  { label: "CRM", href: "/crm", modules: CRM_MODULES },
   { label: "PROJECTS", href: "/projects", modules: ["projects", "boq"] },
-  { label: "PARKS", href: "/parks", modules: ["parks"] },
   { label: "TEAM", href: "/team", modules: ["employees"] },
   { label: "USERS", href: "/users", modules: ["users"] },
-  { label: "LEARNING", href: "/learning", modules: ["learning"] },
-  { label: "REWARDS", href: "/rewards", modules: ["rewards"] },
-  { label: "RESOURCES", href: "/resources", modules: ["resources"] },
 ];
 
 // Sentinel stored in the session snapshot for Super Admins / Full Administrators
@@ -147,15 +129,10 @@ export function landingPath(snapshot: readonly string[] | undefined) {
 // Legacy permission translation (old "CRM.VIEW"-style rows → catalog keys)
 // ---------------------------------------------------------------------------
 export const LEGACY_MODULE_MAP: Record<string, ModuleKey[]> = {
-  "My Work": ["my_work"],
   CRM: CRM_MODULES,
   Projects: ["projects", "boq", "vendors", "purchase", "ppr"],
-  Parks: ["parks"],
   Tasks: ["tasks"],
   Team: ["employees", "hr"],
-  Learning: ["learning"],
-  Rewards: ["rewards"],
-  Resources: ["resources"],
   Finance: ["finance", "payments", "invoices"],
   Reports: ["reports"],
   Settings: ["settings"],

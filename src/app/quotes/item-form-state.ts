@@ -63,7 +63,7 @@ export const pickCode = (f: ItemFormState, code: string): ItemFormState => ({ ..
 // when nothing fits, a code that an earlier name put there is taken out again
 export function withCodeSuggestion(f: ItemFormState, s: CodeSuggestions | null): ItemFormState {
   if (!isCodeAuto(f)) return f;
-  const code = s?.best?.code ?? '';
+  const code = s?.best?.code ?? s?.others?.[0]?.code ?? '';
   return code === f.hsn && code === f.hsnFilled ? f : { ...f, hsn: code, hsnFilled: code };
 }
 

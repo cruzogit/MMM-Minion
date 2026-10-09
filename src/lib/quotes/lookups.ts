@@ -8,7 +8,7 @@ import { CUSTOMER_SELECT, toCustomer } from "@/lib/customers/dto";
 import { itemSearch, loadItemExtras, toItem } from "./catalog";
 import type { CustomerDto, ItemDto } from "./types";
 
-const LIMIT = 30;
+const LIMIT = 250;
 const contains = (q: string) => ({ contains: q, mode: "insensitive" as const });
 
 // Found by the name, the company, the contact's name, a phone number, the email or the customer number

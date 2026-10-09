@@ -52,7 +52,7 @@ export default function QuoteDocument({ doc, watermark = true, forPdf = false }:
     >
       {watermark && !forPdf && company.logo && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={company.logo} alt="" aria-hidden data-watermark className="absolute print:fixed pointer-events-none select-none"
+        <img src={company.logo} crossOrigin="anonymous" alt="" aria-hidden data-watermark className="absolute print:fixed pointer-events-none select-none"
           style={{ top: WATERMARK.centerY, left: WATERMARK.centerX - WATERMARK.width / 2, width: WATERMARK.width, opacity: WATERMARK.opacity, transform: 'translateY(-50%)' }} />
       )}
 
@@ -63,7 +63,7 @@ export default function QuoteDocument({ doc, watermark = true, forPdf = false }:
             {company.logo && (
               <div className="shrink-0 flex items-center" style={{ width: 180, paddingLeft: 21, paddingBottom: 6 }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={company.logo} alt={company.name ? `${company.name} logo` : 'Logo'} data-company-logo style={{ width: 130, maxHeight: 130, objectFit: 'contain' }} />
+                <img src={company.logo} crossOrigin="anonymous" alt={company.name ? `${company.name} logo` : 'Logo'} data-company-logo style={{ width: 130, maxHeight: 130, objectFit: 'contain' }} />
               </div>
             )}
             <div className="min-w-0 py-[3px] pr-2" style={{ paddingLeft: company.logo ? 0 : 10 }}>
@@ -140,7 +140,7 @@ export default function QuoteDocument({ doc, watermark = true, forPdf = false }:
                 <td className="px-[7px] pt-[1px] pb-[20px] leading-[17px]" style={{ borderRight: line }}>
                   <div className="whitespace-pre-line">{l.name}</div>
                   {l.description && <div className="whitespace-pre-line">{l.description}</div>}
-                  {doc.showHsn && l.hsn && <div>{l.taxCodeLabel} : {l.hsn}</div>}
+                  {l.hsn && <div>{l.taxCodeLabel} : {l.hsn}</div>}
                 </td>
                 {doc.extraColumns.map(c => <td key={c.key} className="px-[7px] pt-[1px] pb-[20px] leading-[17px]" style={{ borderRight: line }}>{l.extra[c.key]}</td>)}
                 <td className="px-[7px] pt-[1px] pb-[20px] text-right leading-[19px]" style={{ borderRight: line }}>
@@ -199,7 +199,7 @@ export default function QuoteDocument({ doc, watermark = true, forPdf = false }:
               <div className="flex-1 w-full flex items-center justify-center">
                 {company.signature && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={company.signature} alt="Authorised signature" style={{ width: 'auto', height: 'auto', maxWidth: 150, maxHeight: 150, objectFit: 'contain' }} />
+                  <img src={company.signature} crossOrigin="anonymous" alt="Authorised signature" style={{ width: 'auto', height: 'auto', maxWidth: 150, maxHeight: 150, objectFit: 'contain' }} />
                 )}
               </div>
               <div className={body}>Authorized Signature</div>

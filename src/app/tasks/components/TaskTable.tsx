@@ -87,8 +87,6 @@ export default function TaskTable({ rows, view, offset, sort, dir, busyId, onSor
             <th className={th}><SortHead label="Task Due D&T" k="due" sort={sort} dir={dir} onSort={onSort} /></th>
             <th className={th}>Notes</th>
             <th className={th}>Status</th>
-            <th className={th}>Product ID</th>
-            <th className={th}>Order ID / Customer ID</th>
             <th className={`${th} !right-0 !sticky z-30 text-center shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]`}>Actions</th>
           </tr>
         </thead>
@@ -112,7 +110,7 @@ export default function TaskTable({ rows, view, offset, sort, dir, busyId, onSor
                 </td>
                 <td className={`${td} min-w-[190px] max-w-[260px]`}>
                   <button type="button" onClick={() => onDetails(t)} className="text-left font-semibold text-[#333] hover:underline break-words">{t.title}</button>
-                  <div className="mt-1"><TypeTag type={t.taskType} /></div>
+                  <div className="mt-1"><TypeTag type={t.taskType} label={t.typeLabel} /></div>
                 </td>
                 <td className={`${td} whitespace-nowrap`}>
                   {t.due ? <>{t.due.date}<br />{t.due.time}</> : <span className="text-gray-500">Not set</span>}
@@ -131,8 +129,6 @@ export default function TaskTable({ rows, view, offset, sort, dir, busyId, onSor
                   <StatusBadge status={t.status} />
                   {t.statusAgo && <div className="mt-1 text-[11px] text-gray-500 whitespace-nowrap">{t.statusAgo}</div>}
                 </td>
-                <td className={`${td} whitespace-nowrap`}>{t.productId ?? '-'}</td>
-                <td className={`${td} whitespace-nowrap`}>{t.customerCode ?? '-'}</td>
                 <td className={`${td} !sticky right-0 z-10 bg-white shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]`}>
                   <div className="flex items-center justify-center gap-0.5">
                     {t.can.star && (

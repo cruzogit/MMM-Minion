@@ -2,15 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Calendar, ChevronDown, Plus, Search } from 'lucide-react';
-import { TASK_DATE_FIELDS, TASK_TYPES, type TaskDateField, type TaskListParams, type TaskTypeId } from '@/lib/tasks/rules';
+import { TASK_DATE_FIELDS, type TaskDateField, type TaskListParams, type TaskTypeId } from '@/lib/tasks/rules';
+import type { TypeDef } from '@/lib/tasks/layout-shared';
 
 const field = 'w-full border border-gray-300 rounded px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-[#f5b800]';
 
-export default function TaskToolbar({ params, q, onQ, canCreate, onType, onDates, onAdd }: {
+export default function TaskToolbar({ params, q, onQ, canCreate, types, onType, onDates, onAdd }: {
   params: TaskListParams;
   q: string;
   onQ: (v: string) => void;
   canCreate: boolean;
+  types: TypeDef[];
   onType: (t: TaskTypeId) => void;
   onDates: (u: { dateField?: string; from?: string; to?: string }) => void;
   onAdd: () => void;
@@ -45,7 +47,7 @@ export default function TaskToolbar({ params, q, onQ, canCreate, onType, onDates
       <div className="relative">
         <select value={params.type} onChange={e => onType(e.target.value as TaskTypeId)} aria-label="Task Type"
           className="h-[42px] appearance-none border-2 border-gray-200 rounded pl-3.5 pr-9 text-[14px] text-gray-800 bg-white focus:outline-none focus:border-[#f5b800] cursor-pointer">
-          {TASK_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+          {types.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 pointer-events-none" />
       </div>

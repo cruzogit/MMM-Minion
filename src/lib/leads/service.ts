@@ -638,7 +638,7 @@ export async function finishFollowUp(actor: AuthContext, leadId: string, followU
   await assertCanAttach(actor, leadId, scope);
   const followUp = await prisma.leadFollowUp.findFirst({
     where: { id: followUpId, leadId, completedAt: null },
-    select: { id: true, nextAt: true, attachments: { where: { status: "PENDING", deletedAt: null }, select: { id: true, storagePath: true, thumbnailPath: true, fileName: true, mimeType: true } } },
+    select: { id: true, nextAt: true, notes: true, attachments: { where: { status: "PENDING", deletedAt: null }, select: { id: true, storagePath: true, thumbnailPath: true, fileName: true, mimeType: true } } },
   });
   if (!followUp) throw new ServiceError(404, "Follow-up not found, or it was already saved.");
   if (!followUp.attachments.length) throw badRequest("No files were attached to this follow-up.");
@@ -661,6 +661,72 @@ export async function finishFollowUp(actor: AuthContext, leadId: string, followU
   if (problems.length || !good.length) throw badRequest(`${problems[0] ?? "The files could not be verified"}. Nothing was saved; please try again.`);
 
   const now = new Date();
+
+  // Automatic Task Creation from Follow-up
+  if (followUp.nextAt) {
+    const lead = await prisma.lead.findUnique({
+      where: { id: leadId },
+      select: { id: true, salesExecutiveId: true, leadPersonId: true, deals: { select: { id: true, salesExecutiveId: true }, take: 1, orderBy: { createdAt: 'desc' } } }
+    });
+    
+    if (lead) {
+      let taskPersonId = lead.salesExecutiveId || lead.leadPersonId;
+      let finalDealId = null;
+      if (scope === "deal" && lead.deals.length > 0) {
+        finalDealId = lead.deals[0].id;
+        taskPersonId = lead.deals[0].salesExecutiveId || taskPersonId;
+      }
+      
+      if (taskPersonId) {
+        const dueAt = new Date(followUp.nextAt);
+        dueAt.setHours(18, 0, 0, 0);
+
+        const taskType = scope === "deal" ? "deal" : "lead";
+        
+        const existingTask = await prisma.task.findFirst({
+          where: { 
+            leadId: scope === "lead" ? leadId : null,
+            dealId: scope === "deal" ? finalDealId : null,
+            taskType: taskType,
+            status: { notIn: ["Completed", "Verified", "Closed"] }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        if (existingTask) {
+          await prisma.task.update({
+            where: { id: existingTask.id },
+            data: {
+              assignedAt: followUp.nextAt,
+              startDate: followUp.nextAt,
+              dueDate: dueAt,
+              title: "Follow-up",
+              notes: followUp.notes,
+            }
+          });
+        } else {
+          await prisma.task.create({
+            data: {
+              title: "Follow-up Task",
+              description: "Automatically created from Follow-up",
+              notes: followUp.notes,
+              taskType: taskType,
+              leadId: scope === "lead" ? leadId : null,
+              dealId: scope === "deal" ? finalDealId : null,
+              priority: "Medium",
+              status: "Upcoming",
+              assignedAt: followUp.nextAt,
+              startDate: followUp.nextAt,
+              dueDate: dueAt,
+              assigneeId: taskPersonId,
+              assignedByEmployeeId: taskPersonId
+            }
+          });
+        }
+      }
+    }
+  }
+
   await prisma.$transaction([
     prisma.leadFollowUp.update({ where: { id: followUp.id }, data: { completedAt: now } }),
     prisma.lead.update({ where: { id: leadId }, data: { lastContactedAt: now, nextActionDate: followUp.nextAt } }),

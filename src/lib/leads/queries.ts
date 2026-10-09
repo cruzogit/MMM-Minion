@@ -14,6 +14,7 @@ export type LeadListParams = {
   to?: string;
   dateBy?: "last" | "next" | "validity"; // the date the range applies to: the last / next follow-up (or, on the Deals page, the Deal Validity). Absent = Assigned Date (when the lead was created and assigned), or the Deal Created date
   cols?: ColumnFilters; // column header tick-box filters; several values in one column = OR, different columns = AND
+  limit?: number;
 };
 
 export const personSelect = { id: true, designation: true, user: { select: { name: true } } } as const;
@@ -171,6 +172,7 @@ export function parseListParams(sp: Record<string, string | string[] | undefined
     sort: (SORT_KEYS as readonly string[]).includes(sort ?? "") ? (sort as LeadSortKey) : undefined,
     dir: one("dir") === "asc" ? "asc" : "desc",
     page: Math.max(1, Number(one("page")) || 1),
+    limit: one("limit") ? Math.max(10, Math.min(1000, Number(one("limit")) || PAGE_SIZE)) : undefined,
   };
 }
 
@@ -270,14 +272,15 @@ export async function buildWhere(params: Pick<LeadListParams, "q" | "cols" | "fr
 
 export async function listLeads(params: LeadListParams) {
   const page = params.page ?? 1;
+  const limit = params.limit ?? PAGE_SIZE;
   const where = await buildWhere(params);
   const [rows, filteredTotal, total] = await Promise.all([
     prisma.lead.findMany({
       where,
       select: rowSelect,
       orderBy: orderBy(params.sort, params.dir === "asc" ? "asc" : "desc"),
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
+      skip: (page - 1) * limit,
+      take: limit,
     }),
     prisma.lead.count({ where }),
     prisma.lead.count({ where: { deletedAt: null, convertedAt: null } }),
@@ -286,8 +289,8 @@ export async function listLeads(params: LeadListParams) {
     rows: rows.map(toRow),
     summary: { total, showing: filteredTotal },
     page,
-    pageCount: Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE)),
-    pageSize: PAGE_SIZE,
+    pageCount: Math.max(1, Math.ceil(filteredTotal / limit)),
+    pageSize: limit,
   };
 }
 

@@ -7,6 +7,7 @@ import { ApiError, callApi } from '@/lib/leads/client';
 import { monthOf, shiftMonth, weekStartOf } from '@/lib/attendance/time';
 import type { AttendanceAction, Overview, Purpose } from '@/lib/attendance/types';
 import ActionDialog from './ActionDialog';
+import CheckInCameraModal, { type VerificationResult } from './CheckInCameraModal';
 import CalendarCard from './CalendarCard';
 import DayPanel from './DayPanel';
 import RequestApprovalsCard from './RequestApprovalsCard';
@@ -66,12 +67,16 @@ export default function AttendanceClient({ initial, canMark }: { initial: Overvi
     setDialog(action);
   }
 
-  async function submit(purpose?: Purpose) {
+  async function submit(purpose?: Purpose, verification?: VerificationResult) {
     if (!dialog) return;
     setSaving(true);
     setDialogError(null);
     try {
-      const body = purpose ? { action: dialog, purpose } : { action: dialog };
+      const body = verification
+        ? { action: dialog, verification }
+        : purpose
+        ? { action: dialog, purpose }
+        : { action: dialog };
       const { overview } = await callApi<{ overview: Overview }>('/api/attendance', 'POST', body);
       const last = overview.grid.find(g => g.day === overview.today)?.detail?.history.at(-1);
       show(overview, overview.today);
@@ -131,7 +136,25 @@ export default function AttendanceClient({ initial, canMark }: { initial: Overvi
         <RequestApprovalsCard />
       </div>
 
-      {dialog && <ActionDialog key={dialog} action={dialog} codes={data.codes} busy={saving} error={dialogError} onCancel={() => setDialog(null)} onSubmit={submit} />}
+      {dialog === 'CHECK_IN' ? (
+        <CheckInCameraModal
+          key="check-in-camera"
+          busy={saving}
+          error={dialogError}
+          onCancel={() => setDialog(null)}
+          onSubmit={verification => submit(undefined, verification)}
+        />
+      ) : dialog ? (
+        <ActionDialog
+          key={dialog}
+          action={dialog}
+          codes={data.codes}
+          busy={saving}
+          error={dialogError}
+          onCancel={() => setDialog(null)}
+          onSubmit={submit}
+        />
+      ) : null}
     </main>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Calendar, Download, FileInput, Filter, LayoutTemplate, Plus, RefreshCw } from 'lucide-react';
+import { Calendar, Download, Filter, LayoutTemplate, Plus, RefreshCw, Upload } from 'lucide-react';
 import { DATE_FILTER_TYPES } from '@/lib/leads/constants';
 
 const iconBtn = 'w-10 h-10 flex items-center justify-center text-gray-800 hover:text-black hover:bg-gray-100 rounded transition-colors';
@@ -10,16 +10,36 @@ const field = 'w-full border border-gray-300 rounded px-3 py-2 text-[13px] text-
 // The action icons of the Leads page (add, layout, refresh, filter = which date to filter by, calendar = the From / To range,
 // download, import), shown on the summary / search row. The filter and calendar panels open right below the icons.
 // The Deals page uses it too: no Add button (canCreate false), its own layout label, noun and list of dates, and no Import placeholder.
-export default function LeadToolbar({ params, canCreate, canExport, canEditLayout, refreshing, onAdd, onEditLayout, onRefresh, onParams, exportHref, className = '', dateTypes = DATE_FILTER_TYPES, layoutLabel = 'Edit Page Layout', noun = 'leads', showImport = true }: {
+export default function LeadToolbar({
+  params,
+  canCreate,
+  canExport,
+  canImport = canCreate,
+  canEditLayout,
+  refreshing,
+  onAdd,
+  onEditLayout,
+  onRefresh,
+  onParams,
+  onImport,
+  exportHref,
+  className = '',
+  dateTypes = DATE_FILTER_TYPES,
+  layoutLabel = 'Edit Page Layout',
+  noun = 'leads',
+  showImport = true,
+}: {
   params: { from?: string; to?: string; dateBy?: string }; // the Leads, Deals and Projects pages each have their own list of dates
   canCreate: boolean;
   canExport: boolean;
+  canImport?: boolean;
   canEditLayout: boolean; // Super Admin only
   refreshing: boolean;
   onAdd: () => void;
   onEditLayout: () => void;
   onRefresh: () => void;
   onParams: (u: Record<string, string | undefined>) => void;
+  onImport?: () => void;
   exportHref: string;
   className?: string;
   dateTypes?: readonly { value: string; label: string }[]; // the first one is used when nothing else is picked
@@ -71,7 +91,27 @@ export default function LeadToolbar({ params, canCreate, canExport, canEditLayou
       ) : (
         <span className={`${iconBtn} opacity-30 cursor-not-allowed`} title="You do not have permission to export"><Download className="w-5 h-5" /></span>
       )}
-      {showImport && <span className={`${iconBtn} opacity-30 cursor-not-allowed`} title="Import: coming soon" aria-disabled="true"><FileInput className="w-5 h-5" /></span>}
+      {showImport && (
+        canImport && onImport ? (
+          <button
+            type="button"
+            onClick={onImport}
+            title={`Import ${noun === 'deals' ? 'Deals' : 'Leads'} (CSV / XLSX)`}
+            aria-label={`Import ${noun === 'deals' ? 'Deals' : 'Leads'}`}
+            className={iconBtn}
+          >
+            <Upload className="w-5 h-5" />
+          </button>
+        ) : (
+          <span
+            className={`${iconBtn} opacity-30 cursor-not-allowed`}
+            title={`You do not have permission to import ${noun}`}
+            aria-disabled="true"
+          >
+            <Upload className="w-5 h-5" />
+          </span>
+        )
+      )}
 
       {panel === 'filter' && (
         <div className="absolute right-0 top-12 z-30 w-72 bg-white border border-gray-200 rounded-lg shadow-xl p-4 space-y-3">

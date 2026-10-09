@@ -236,7 +236,7 @@ export async function getCRMPipelineStats() {
 // ─── CUSTOMER ACTIONS ─────────────────────────────────────────────────────────
 
 export async function checkDuplicateCustomer(phone?: string, email?: string) {
-  await requireAnyPermission(['leads', 'customers']);
+  await requireAnyPermission(['leads', 'deals']);
   const where: any = { OR: [] };
   if (phone) where.OR.push({ phone });
   if (email) where.OR.push({ email });
@@ -245,7 +245,7 @@ export async function checkDuplicateCustomer(phone?: string, email?: string) {
 }
 
 export async function getCustomers(search?: string) {
-  await requireAnyPermission(['customers', 'leads']);
+  await requireAnyPermission(['leads', 'deals']);
   const where = search ? {
     OR: [
       { name: { contains: search, mode: 'insensitive' as const } },

@@ -1,0 +1,1 @@
+import { searchDeals } from "./src/lib/records/lookups"; async function main() { console.log(await searchDeals("", undefined)); console.log(await searchDeals("", "")); } main().catch(console.error).finally(() => process.exit(0));

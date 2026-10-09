@@ -11,7 +11,15 @@ const purpose = z.discriminatedUnion("kind", [
 ]);
 
 const actionSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("CHECK_IN") }).strict(),
+  z.object({
+    action: z.literal("CHECK_IN"),
+    verification: z.object({
+      method: z.enum(["FACE", "THUMB"]),
+      verified: z.boolean(),
+      confidence: z.number().optional(),
+      snapshot: z.string().optional(),
+    }).optional(),
+  }),
   z.object({ action: z.literal("CHECK_OUT") }).strict(),
   z.object({ action: z.literal("OFFICE_IN") }).strict(),
   z.object({ action: z.literal("SITE_OUT") }).strict(),

@@ -17,9 +17,21 @@ import {
   ChevronLeft, 
   ChevronRight, 
   X, 
-  LogOut 
+  LogOut,
+  ClipboardList,
+  UsersRound,
+  Handshake,
+  FileText,
+  Package,
+  Boxes,
+  Wrench,
+  Wallet,
+  HandCoins,
+  CalendarCheck,
+  UserCog
 } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
+import { useState, useEffect } from 'react';
 
 export interface NavItem {
   label: string;
@@ -30,15 +42,19 @@ export interface NavItem {
 
 export const allNavItems: NavItem[] = [
   { label: 'HOME', icon: Home, href: '/' },
-  { label: 'MY WORK', icon: Briefcase, href: '/my-work' },
-  { label: 'CRM', icon: Target, href: '/crm', requiredPermission: 'crm.view' },
-  { label: 'PROJECTS', icon: LayoutGrid, href: '/projects', requiredPermission: 'projects.view' },
-  { label: 'PARKS', icon: TreePine, href: '/parks', requiredPermission: 'parks.view' },
+  { label: 'LEADS', icon: ClipboardList, href: '/leads', requiredPermission: 'leads.view' },
+  { label: 'DEALS', icon: Handshake, href: '/deals', requiredPermission: 'deals.view' },
+  { label: 'QUOTES', icon: FileText, href: '/quotes', requiredPermission: 'quotes.view' },
+  { label: 'ITEMS', icon: Package, href: '/items', requiredPermission: 'quotes.view' },
+  { label: 'MATERIAL VENDOR', icon: Boxes, href: '/material-vendors', requiredPermission: 'vendors.view' },
+  { label: 'SERVICE VENDOR', icon: Wrench, href: '/service-vendors', requiredPermission: 'vendors.view' },
+  { label: 'PRE-PAYMENT RECORDS', icon: Wallet, href: '/pre-payments', requiredPermission: 'ppr.view' },
+  { label: 'PAYMENT COLLECTION RECORDS', icon: HandCoins, href: '/payment-collections', requiredPermission: 'payments.view' },
+  { label: 'ATTENDANCE', icon: CalendarCheck, href: '/attendance', requiredPermission: 'attendance.view' },
   { label: 'TASKS', icon: CheckCircle2, href: '/tasks', requiredPermission: 'tasks.view' },
+  { label: 'PROJECTS', icon: LayoutGrid, href: '/projects', requiredPermission: 'projects.view' },
   { label: 'TEAM', icon: Users, href: '/team', requiredPermission: 'team.view' },
-  { label: 'LEARNING', icon: BookOpen, href: '/learning', requiredPermission: 'learning.view' },
-  { label: 'REWARDS', icon: Gift, href: '/rewards', requiredPermission: 'rewards.view' },
-  { label: 'RESOURCES', icon: Library, href: '/resources', requiredPermission: 'resources.view' },
+  { label: 'USERS', icon: UserCog, href: '/users', requiredPermission: 'users.view' },
 ];
 
 interface SidebarProps {
@@ -57,6 +73,14 @@ export default function Sidebar({
   const pathname = usePathname();
   const { data: session } = useSession();
   const router = useRouter();
+
+  const [layout, setLayout] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    fetch('/api/settings/sidebar').then(res => res.json()).then(data => {
+      setLayout(data.layout || []);
+    }).catch(() => setLayout([]));
+  }, []);
 
   const permissions = (session?.user as any)?.permissions || [];
   const isSuperAdmin = !!(session?.user as any)?.isSuperAdmin;
@@ -134,54 +158,36 @@ export default function Sidebar({
 
         {/* Navigation List */}
         <div className="flex-1 overflow-y-auto no-scrollbar py-4 px-2 space-y-1">
-          {!collapsed && (
-            <div className="px-3 pb-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-              MAIN MENU
+          {layout && layout.length > 0 ? (
+            layout.map(group => {
+              const groupItems = group.items.map((label: string) => visibleNavItems.find(n => n.label === label)).filter(Boolean) as NavItem[];
+              if (groupItems.length === 0) return null;
+              return (
+                <div key={group.id} className="mb-4">
+                  {!collapsed && (
+                    <div className="px-3 pb-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      {group.title}
+                    </div>
+                  )}
+                  {collapsed && <div className="w-8 h-px bg-[#292B30] mx-auto my-2" />}
+                  <div className="space-y-1">
+                    {groupItems.map(item => renderNavItem(item, collapsed, isMobile))}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="mb-4">
+              {!collapsed && (
+                <div className="px-3 pb-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  MAIN MENU
+                </div>
+              )}
+              <div className="space-y-1">
+                {visibleNavItems.map(item => renderNavItem(item, collapsed, isMobile))}
+              </div>
             </div>
           )}
-
-          {visibleNavItems.map((item) => {
-            const isActive =
-              pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
-            const Icon = item.icon;
-
-            return (
-              <Link
-                key={item.label}
-                href={item.href}
-                onClick={() => isMobile && setIsMobileOpen(false)}
-                title={collapsed ? item.label : undefined}
-                className={`relative flex items-center rounded-lg transition-all group ${
-                  collapsed 
-                    ? 'justify-center py-3 px-2' 
-                    : 'gap-3.5 px-3 py-2.5'
-                } ${
-                  isActive
-                    ? 'bg-yellow-400/10 text-yellow-400 font-bold border border-yellow-400/20'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5 font-medium'
-                }`}
-              >
-                {/* Active Indicator Bar on Left */}
-                {isActive && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-yellow-400 rounded-r-full shadow-[0_0_8px_rgba(255,204,0,0.5)]" />
-                )}
-
-                <Icon
-                  className={`shrink-0 transition-colors ${
-                    collapsed ? 'w-5 h-5' : 'w-4 h-4'
-                  } ${
-                    isActive ? 'text-yellow-400' : 'text-gray-400 group-hover:text-white'
-                  }`}
-                />
-
-                {!collapsed && (
-                  <span className="text-[12px] tracking-wide whitespace-nowrap">
-                    {item.label}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
 
           {/* Admin section if Super Admin */}
           {isSuperAdmin && (
@@ -276,6 +282,33 @@ export default function Sidebar({
           )}
         </div>
       </div>
+    );
+  };
+
+  const renderNavItem = (item: NavItem, collapsed: boolean, isMobile: boolean) => {
+    const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
+    const Icon = item.icon;
+
+    return (
+      <Link
+        key={item.label}
+        href={item.href}
+        onClick={() => isMobile && setIsMobileOpen(false)}
+        title={collapsed ? item.label : undefined}
+        className={`relative flex items-center rounded-lg transition-all group ${
+          collapsed ? 'justify-center py-3 px-2' : 'gap-3.5 px-3 py-2.5'
+        } ${
+          isActive
+            ? 'bg-yellow-400/10 text-yellow-400 font-bold border border-yellow-400/20'
+            : 'text-gray-400 hover:text-white hover:bg-white/5 font-medium'
+        }`}
+      >
+        {isActive && (
+          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-yellow-400 rounded-r-full shadow-[0_0_8px_rgba(255,204,0,0.5)]" />
+        )}
+        <Icon className={`shrink-0 transition-colors ${collapsed ? 'w-5 h-5' : 'w-4 h-4'} ${isActive ? 'text-yellow-400' : 'text-gray-400 group-hover:text-white'}`} />
+        {!collapsed && <span className="text-[12px] tracking-wide whitespace-nowrap">{item.label}</span>}
+      </Link>
     );
   };
 

@@ -1,5 +1,6 @@
 // What the server sends the Tasks page. Plain data only, so the browser can use it too.
-import type { TaskTypeId, TaskViewId } from "./rules";
+import type { TaskTypeId } from "./rules";
+import type { TaskLayout } from "./layout-shared";
 
 export type DateTimeText = { date: string; time: string };
 export type Person = { id: string; name: string };
@@ -7,6 +8,7 @@ export type Person = { id: string; name: string };
 export type TaskRow = {
   id: string;
   taskType: TaskTypeId;
+  typeLabel: string; // label of the task type as named in Edit Page Layout
   title: string;
   assigned: DateTimeText; // Assigned D&T
   start: DateTimeText | null; // Start Date
@@ -37,6 +39,8 @@ export type TaskDetail = TaskRow & {
   dueRaw: string | null;
   dueTimeRaw: string | null;
   link: { kind: "lead" | "project" | "deal"; id: string; label: string } | null;
+  customValues: Record<string, string | number | null>; // values of the Edit Page Layout fields, keyed by field key
+  customFields: { key: string; label: string; value: string }[]; // the same, ready to show (only fields still in the layout)
   files: TaskFile[];
   history: { action: string; by: string; at: string }[];
 };
@@ -44,11 +48,11 @@ export type TaskDetail = TaskRow & {
 export type TaskListResult = {
   rows: TaskRow[];
   total: number; // rows in the selected type + view (with search and date filter)
-  counts: Record<TaskViewId, number>;
+  counts: Record<string, number>;
   page: number;
   pageCount: number;
   pageSize: number;
 };
 
-export type TaskOptions = { employees: { id: string; name: string; designation: string | null }[] };
+export type TaskOptions = { employees: { id: string; name: string; designation: string | null }[]; layout: TaskLayout; canEditLayout: boolean };
 export type LinkOption = { id: string; label: string };

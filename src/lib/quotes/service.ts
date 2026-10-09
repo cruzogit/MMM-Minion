@@ -347,7 +347,7 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
     const raw = has(values, f.key) ? values[f.key] : null;
     const res = cleanValue(f, raw);
     if ("error" in res) { issues.push(issue(path, res.error)); continue; }
-    if (f.required && emptyOf(f, res.value)) { issues.push(issue(path, `${f.label} is required`)); continue; }
+    if (f.required && emptyOf(f, res.value) && body.intent !== "draft") { issues.push(issue(path, `${f.label} is required`)); continue; }
     if (f.type === "FILE") { out.slots.push({ fieldKey: f.key, rowId: null, ids: res.value as string[] }); continue; }
     if (typeof res.value === "string") {
       const unchanged = !!existing && res.value === storedValue(f, existing as unknown as Record<string, unknown>);
@@ -421,9 +421,9 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
     }
     const blank = !name && !description && !itemId && rate === 0 && !customFilled && !hsn;
     if (blank) return; // an empty row is simply dropped
-    for (const c of missing) issues.push(issue(["lines", i, "custom", c.key], `${c.label} is required`));
-    if (!name) { issues.push(issue(at("name"), "Item Details is required")); return; }
-    if (templateColumn?.enabled && templateColumn.required && !taskTemplateId) { issues.push(issue(at("taskTemplateId"), `${templateColumn.label} is required`)); return; }
+    if (body.intent !== "draft") for (const c of missing) issues.push(issue(["lines", i, "custom", c.key], `${c.label} is required`));
+    if (!name && body.intent !== "draft") { issues.push(issue(at("name"), "Item Details is required")); return; }
+    if (templateColumn?.enabled && templateColumn.required && !taskTemplateId && body.intent !== "draft") { issues.push(issue(at("taskTemplateId"), `${templateColumn.label} is required`)); return; }
     const taxInfo: TaxInfo | null = tax ? { id: tax.id, name: tax.name, rate: tax.rate, components: tax.components } : null;
     calcLines.push({ quantity: qty, rate, tax: taxInfo });
     out.lines.push({

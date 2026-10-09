@@ -1,10 +1,7 @@
 'use client';
 
 import type { LayoutSection } from '@/lib/records/types';
-import { buildColumns, materialStatusTone, moneyCell, RowField, Section, SplitTables, useProject } from './common';
-
-// The money and the buttons of a row go to the second table, as in the reference
-const SECOND_TABLE = ['mvGiven', 'mvBalance', 'materialBill', 'materialTaskPersonId', 'mvCredit'];
+import { buildColumns, materialStatusTone, moneyCell, RowField, Section, SectionTable, useProject } from './common';
 
 // MATERIAL VENDOR INVOLVEMENT: a row for every Material Vendor chosen in Vendor Selection, with a code that never changes (MP1M1, MP1M2 ...).
 // Given Amount is what the Pre-Payment Records of this deal say was paid to the vendor; Balance = Quoted Value - Given Amount;
@@ -15,10 +12,8 @@ export default function MaterialVendorSection({ section }: { section: LayoutSect
 
   return (
     <Section id={section.id} title={section.label}>
-      <SplitTables
+      <SectionTable
         columns={columns}
-        secondFrom={SECOND_TABLE}
-        numberKey="mvNo"
         rows={detail.materialVendors}
         empty="Choose Material Vendors in Vendor Selection and they appear here."
         rowClass={row => (row.meta.selected ? '' : 'bg-gray-50 text-gray-500')}

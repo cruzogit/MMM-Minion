@@ -11,9 +11,11 @@ import {
   ChevronDown, 
   User, 
   Shield, 
-  LogOut 
+  LogOut,
+  LayoutTemplate
 } from 'lucide-react';
 import { allNavItems } from './Sidebar';
+import SidebarLayoutEditor from './SidebarLayoutEditor';
 
 interface TopHeaderProps {
   onOpenMobile: () => void;
@@ -25,6 +27,7 @@ export default function TopHeader({ onOpenMobile, isCollapsed }: TopHeaderProps)
   const { data: session } = useSession();
   const router = useRouter();
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const isSuperAdmin = !!(session?.user as any)?.isSuperAdmin;
@@ -103,13 +106,13 @@ export default function TopHeader({ onOpenMobile, isCollapsed }: TopHeaderProps)
           <Search className="w-5 h-5" />
         </button>
 
-        {/* Notifications Bell */}
+        {/* Edit Layout Button (Always visible as requested) */}
         <button 
-          aria-label="Notifications"
-          className="relative text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors"
+          onClick={() => setLayoutEditorOpen(true)}
+          className="flex items-center gap-2 text-gray-400 hover:text-white px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-sm font-medium border border-transparent hover:border-[#292B30]"
         >
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-yellow-400 rounded-full ring-2 ring-[#111113]" />
+          <LayoutTemplate className="w-4 h-4" />
+          <span className="hidden sm:inline">Edit Page Layout</span>
         </button>
 
         <div className="w-px h-6 bg-[#292B30]" />
@@ -192,6 +195,10 @@ export default function TopHeader({ onOpenMobile, isCollapsed }: TopHeaderProps)
           </Link>
         )}
       </div>
+
+      {layoutEditorOpen && (
+        <SidebarLayoutEditor onClose={() => setLayoutEditorOpen(false)} onSaved={() => {}} />
+      )}
     </header>
   );
 }

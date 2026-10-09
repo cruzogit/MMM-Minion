@@ -86,7 +86,7 @@ export default function TaskDetailsModal({ taskId, focus, onClose, onEdit, onCha
         <div className="flex items-start justify-between gap-3 px-6 py-4 border-b border-gray-200 shrink-0">
           <div className="min-w-0">
             <h2 id="task-details-title" className="text-[19px] font-bold text-[#333] break-words">{t?.title ?? 'Task'}</h2>
-            {t && <div className="mt-1.5 flex items-center gap-2"><TypeTag type={t.taskType} /><StatusBadge status={t.status} /></div>}
+            {t && <div className="mt-1.5 flex items-center gap-2"><TypeTag type={t.taskType} label={t.typeLabel} /><StatusBadge status={t.status} /></div>}
           </div>
           <button onClick={onClose} aria-label="Close" className="text-gray-500 hover:text-black shrink-0"><X className="w-6 h-6" /></button>
         </div>
@@ -105,10 +105,9 @@ export default function TaskDetailsModal({ taskId, focus, onClose, onEdit, onCha
                 <Item label="Completed">{t.completed ? `${t.completed.date} ${t.completed.time}` : null}</Item>
                 <Item label="Lead ID">{t.lead ? <Link href={`/leads?view=${t.lead.id}`} className="text-[#2f80ed] font-semibold hover:underline">{t.lead.code}</Link> : null}</Item>
                 <Item label="Linked to">{t.link ? `${t.link.kind[0].toUpperCase()}${t.link.kind.slice(1)}: ${t.link.label}` : null}</Item>
-                <Item label="Product ID">{t.productId}</Item>
-                <Item label="Order ID / Customer ID">{t.customerCode}</Item>
                 <Item label="Priority">{t.priority}</Item>
                 <Item label="Proof file">{t.requiresCompletionProof ? 'Required before completing' : 'Not required'}</Item>
+                {t.customFields.map(f => <Item key={f.key} label={f.label}>{f.value}</Item>)}
                 {t.notes.customerName && <div className="sm:col-span-2"><Item label="Customer">{`${t.notes.customerName}${t.notes.contactNumber ? ` (${t.notes.contactNumber})` : ''}`}</Item></div>}
                 {t.notes.requirement && <div className="sm:col-span-2"><Item label="Lead requirement">{t.notes.requirement}</Item></div>}
                 <div className="sm:col-span-2"><Item label="Notes">{t.notes.text}</Item></div>

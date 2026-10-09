@@ -2,14 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Package, Boxes, Wrench, Wallet, HandCoins, CalendarCheck, type LucideIcon } from 'lucide-react';
+import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Package, Boxes, Wrench, Wallet, HandCoins, CalendarCheck, LayoutTemplate, type LucideIcon } from 'lucide-react';
 import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
+import SidebarLayoutEditor from './SidebarLayoutEditor';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 const NAV_ICONS: Record<string, LucideIcon> = {
   "/": Home,
-  "/my-work": Briefcase,
   "/leads": ClipboardList,
   "/deals": Handshake,
   "/quotes": FileText,
@@ -19,15 +19,10 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/pre-payments": Wallet,
   "/payment-collections": HandCoins,
   "/attendance": CalendarCheck,
-  "/crm": Target,
   "/projects": LayoutGrid,
-  "/parks": TreePine,
   "/tasks": CheckCircle2,
   "/team": Users,
   "/users": UserCog,
-  "/learning": BookOpen,
-  "/rewards": Gift,
-  "/resources": Library,
 };
 
 // "Hide menu": the whole navigator can be put away; the choice is remembered in this browser.
@@ -86,6 +81,15 @@ export default function GlobalNavbar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const router = useRouter();
+  const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
+  const [layout, setLayout] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    fetch('/api/settings/sidebar')
+      .then(res => res.json())
+      .then(data => setLayout(data.layout || []))
+      .catch(() => setLayout([]));
+  }, []);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   // Desktop: the sidebar rests as a slim icon strip and opens while the pointer (or keyboard focus) is on it
@@ -153,39 +157,89 @@ export default function GlobalNavbar() {
           <Search className="w-4 h-4 shrink-0" />
           {!isCompact && <span className="text-[12px] font-medium">Search</span>}
         </button>
-        <button className="relative p-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#1a1b1e] transition-colors" title="Notifications">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-yellow-400 border-2 border-[#111113] rounded-full"></span>
+        <button
+          onClick={() => setLayoutEditorOpen(true)}
+          className="p-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#1a1b1e] transition-colors"
+          title="Edit Page Layout"
+          aria-label="Edit Page Layout"
+        >
+          <LayoutTemplate className="w-5 h-5" />
         </button>
       </div>
 
       {/* Navigation Links */}
       <nav className="flex-1 overflow-y-auto no-scrollbar px-3 py-4 space-y-1">
-        {visibleNavItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
-          const Icon = item.icon;
+        {(() => {
+          const renderNavLink = (item: (typeof visibleNavItems)[0]) => {
+            const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
+            const Icon = item.icon;
 
-          return (
-            <Link
-              key={item.label}
-              href={item.href}
-              title={isCompact ? item.label : undefined}
-              aria-current={isActive ? 'page' : undefined}
-              onClick={() => setMobileOpen(false)}
-              className={`relative flex items-center gap-3 rounded-lg transition-colors group ${
-                isCompact ? 'justify-center h-11' : 'px-3 min-h-11 py-1'
-              } ${
-                isActive ? 'bg-yellow-400/10 text-yellow-400' : 'text-gray-400 hover:text-gray-200 hover:bg-[#1a1b1e]'
-              }`}
-            >
-              {isActive && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-yellow-400 rounded-r-full" />
-              )}
-              <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-yellow-400' : 'text-gray-400 group-hover:text-gray-200'} transition-colors`} />
-              {!isCompact && <span className="text-[12px] font-bold tracking-wider leading-tight">{item.label}</span>}
-            </Link>
-          );
-        })}
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                title={isCompact ? item.label : undefined}
+                aria-current={isActive ? 'page' : undefined}
+                onClick={() => setMobileOpen(false)}
+                className={`relative flex items-center gap-3 rounded-lg transition-colors group ${
+                  isCompact ? 'justify-center h-11' : 'px-3 min-h-11 py-1'
+                } ${
+                  isActive ? 'bg-yellow-400/10 text-yellow-400' : 'text-gray-400 hover:text-gray-200 hover:bg-[#1a1b1e]'
+                }`}
+              >
+                {isActive && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-yellow-400 rounded-r-full" />
+                )}
+                <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-yellow-400' : 'text-gray-400 group-hover:text-gray-200'} transition-colors`} />
+                {!isCompact && <span className="text-[12px] font-bold tracking-wider leading-tight">{item.label}</span>}
+              </Link>
+            );
+          };
+
+          if (layout && layout.length > 0) {
+            const assignedLabels = new Set(layout.flatMap((g: any) => g.items || []));
+            const remaining = visibleNavItems.filter(i => !assignedLabels.has(i.label));
+
+            return (
+              <>
+                {layout.map((group: any) => {
+                  const groupItems = (group.items || [])
+                    .map((label: string) => visibleNavItems.find(i => i.label === label))
+                    .filter(Boolean);
+                  if (groupItems.length === 0) return null;
+                  return (
+                    <div key={group.id} className="mb-3">
+                      {!isCompact && (
+                        <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                          {group.title}
+                        </div>
+                      )}
+                      {isCompact && <div className="w-6 h-px bg-[#292B30] mx-auto my-2" />}
+                      <div className="space-y-1">
+                        {groupItems.map(renderNavLink)}
+                      </div>
+                    </div>
+                  );
+                })}
+                {remaining.length > 0 && (
+                  <div className="mb-3">
+                    {!isCompact && (
+                      <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                        MORE
+                      </div>
+                    )}
+                    {isCompact && <div className="w-6 h-px bg-[#292B30] mx-auto my-2" />}
+                    <div className="space-y-1">
+                      {remaining.map(renderNavLink)}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          }
+
+          return visibleNavItems.map(renderNavLink);
+        })()}
       </nav>
 
       {/* Hide menu (desktop): puts the whole navigator away; the menu icon brings it back */}
@@ -273,9 +327,13 @@ export default function GlobalNavbar() {
         <Link href="/" aria-label="Minion home">
           <Logo />
         </Link>
-        <button className="relative text-gray-400 hover:text-white transition-colors" title="Notifications">
-          <Bell className="w-5 h-5" />
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-yellow-400 border-2 border-[#111113] rounded-full"></span>
+        <button
+          onClick={() => setLayoutEditorOpen(true)}
+          className="text-gray-400 hover:text-white transition-colors p-1"
+          title="Edit Page Layout"
+          aria-label="Edit Page Layout"
+        >
+          <LayoutTemplate className="w-5 h-5" />
         </button>
       </header>
 
@@ -322,6 +380,18 @@ export default function GlobalNavbar() {
             {renderSidebarContent(!expanded, true)}
           </aside>
         </div>
+      )}
+
+      {layoutEditorOpen && (
+        <SidebarLayoutEditor
+          onClose={() => setLayoutEditorOpen(false)}
+          onSaved={() => {
+            fetch('/api/settings/sidebar')
+              .then(res => res.json())
+              .then(data => setLayout(data.layout || []))
+              .catch(() => setLayout([]));
+          }}
+        />
       )}
     </>
   );

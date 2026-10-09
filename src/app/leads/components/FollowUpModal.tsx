@@ -28,6 +28,7 @@ export default function FollowUpModal({ row, onClose, onSaved, apiBase = '/api/l
   const [nextDate, setNextDate] = useState(tomorrow());
   const [nextTime, setNextTime] = useState('18:00');
   const [notes, setNotes] = useState('');
+  const [taskName, setTaskName] = useState('');
   const [errors, setErrors] = useState<{ files?: string; notes?: string; form?: string }>({});
   const [busy, setBusy] = useState('');
   const input = useRef<HTMLInputElement>(null);
@@ -62,6 +63,7 @@ export default function FollowUpModal({ row, onClose, onSaved, apiBase = '/api/l
         notes: notes.trim(),
         nextDate: nextDate || null,
         nextTime: nextDate ? nextTime || null : null,
+        taskName: taskName.trim() || undefined,
         files: sent.map(toUploadFile),
       });
       for (const s of skipped) toast.info(`${s.name} was added twice, so it was only attached once`);

@@ -4,11 +4,8 @@ import { useState } from 'react';
 import { Clock, IndianRupee } from 'lucide-react';
 import type { LayoutSection } from '@/lib/records/types';
 import type { ProjectDetail, ProjectRow } from '@/lib/projects/types';
-import { buildColumns, moneyCell, RowField, Section, SplitTables, useProject } from './common';
+import { buildColumns, moneyCell, RowField, Section, SectionTable, useProject } from './common';
 import { HistoryPopup, PaymentPopup } from './VendorPopups';
-
-// The money and the two icons of a row go to the second table, as in the reference
-const SECOND_TABLE = ['svGiven', 'svBalance', 'svPayment', 'svHistory'];
 
 // SERVICE VENDOR INVOLVEMENT: a row for every Service Vendor chosen in Vendor Selection (MP1S1, MP1S2 ...). Start / Started and Completion / Completed
 // are four dates the person fills in; Duration is worked out from them (planned / actual). Given Amount comes from the Pre-Payment Records of the deal.
@@ -26,10 +23,8 @@ export default function ServiceVendorSection({ section }: { section: LayoutSecti
 
   return (
     <Section id={section.id} title={section.label}>
-      <SplitTables
+      <SectionTable
         columns={columns}
-        secondFrom={SECOND_TABLE}
-        numberKey="svNo"
         rows={detail.serviceVendors}
         empty="Choose Service Vendors in Vendor Selection and they appear here."
         rowClass={row => (row.meta.selected ? '' : 'bg-gray-50 text-gray-500')}

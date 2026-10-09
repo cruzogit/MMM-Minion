@@ -28,8 +28,16 @@ export type Whereabouts = "NOT_STARTED" | "OFFICE" | "OUT" | "SITE" | "DONE";
 export type Purpose = { kind: "CODE"; code: string } | { kind: "OTHER"; text: string };
 export const MAX_PURPOSE_TEXT = 200;
 
+export type VerificationDetail = {
+  method: "FACE" | "THUMB";
+  verified: boolean;
+  confidence?: number;
+  snapshot?: string;
+};
+
 export type ActionBody =
-  | { action: "CHECK_IN" | "CHECK_OUT" | "OFFICE_IN" | "SITE_OUT" }
+  | { action: "CHECK_IN"; verification?: VerificationDetail }
+  | { action: "CHECK_OUT" | "OFFICE_IN" | "SITE_OUT" }
   | { action: "OFFICE_OUT" | "SITE_IN"; purpose: Purpose };
 
 export type SiteVisitCodeOption = { code: string; name: string; label: string }; // SV001, Skyline Project, "SV001 - Skyline Project"

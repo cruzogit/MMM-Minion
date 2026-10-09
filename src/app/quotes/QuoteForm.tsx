@@ -19,7 +19,7 @@ import { TermsPicker, TermsTemplatesModal } from './TermsTemplates';
 import { matchTemplateId, termsTemplatesOf } from '@/lib/quotes/terms';
 import { Button, Combo, FormRow, Spinner, inputClass } from './ui';
 import { defaultTaxId, isInterState } from '@/lib/quotes/taxes';
-import { blankLine, calcFromDto, computeTotals, emptyCalc, lineFromDto, lineToInput, type CalcState, type LineState } from './form-state';
+import { blankLine, isBlankLine, calcFromDto, computeTotals, emptyCalc, lineFromDto, lineToInput, type CalcState, type LineState } from './form-state';
 
 const EMPTY_REFS: RecordRefs = { users: {}, deals: {}, materialVendors: {}, serviceVendors: {}, lookups: {} };
 const INFO: Record<string, string> = { subject: 'Let your customer know what this Quote is for', retainerInvoice: 'A retainer invoice for the advance is created when the quote is accepted' };
@@ -70,6 +70,8 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
   const [termsSettings, setTermsSettings] = useState(settings.terms); // the Terms & Conditions templates (the dropdown above the text)
   const [termsPick, setTermsPick] = useState('');
   const [termsOpen, setTermsOpen] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(quote?.id ?? null);
+  const [lastSavedJSON, setLastSavedJSON] = useState<string>('');
 
   const customerId = typeof values.customerId === 'string' ? values.customerId : '';
   const dateValue = typeof values.date === 'string' ? values.date : '';
@@ -106,15 +108,15 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
     picked,
     onPick: (id, text) => setPicked(p => ({ ...p, [id]: text })),
     onBusy: d => setUploads(n => n + d),
-    lookupExtra: customerId ? { customerId } : undefined,
+    lookupExtra: undefined,
     onLookup: (f, id, item) => {
-      // A deal chosen before any customer: the quote is for the customer of that deal
-      const deal = f.lookup === 'deal' && id && item?.data?.customerId;
-      if (deal && !customerId) {
-        void callApi<{ items: { customer: CustomerDto }[] }>(`/api/quotes/customers?id=${encodeURIComponent(item!.data!.customerId as string)}`, 'GET')
-          .then(r => { if (r.items[0]) applyCustomer(r.items[0].customer, true); })
-          .catch(() => undefined);
-      }
+      // Disabled as per user request: picking a deal shouldn't overwrite the customer details
+      // const deal = f.lookup === 'deal' && id && item?.data?.customerId;
+      // if (deal) {
+      //   void callApi<{ items: { customer: CustomerDto }[] }>(`/api/quotes/customers?id=${encodeURIComponent(item!.data!.customerId as string)}`, 'GET')
+      //     .then(r => { if (r.items[0]) applyCustomer(r.items[0].customer, true); })
+      //     .catch(() => undefined);
+      // }
     },
   };
 
@@ -191,6 +193,37 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
     };
   };
 
+  useEffect(() => {
+    const hasMeaningfulData = customerId || lines.some(l => !isBlankLine(l)) || (typeof values.subject === 'string' && values.subject.trim());
+    if (!hasMeaningfulData || saving || uploads > 0) return;
+
+    const body = buildBody('draft');
+    const bodyStr = JSON.stringify(body);
+    if (bodyStr === lastSavedJSON) return;
+    if (!lastSavedJSON) {
+      setLastSavedJSON(bodyStr);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      try {
+        if (draftId) {
+          await callApi(`/api/quotes/${draftId}`, 'PUT', body);
+          setLastSavedJSON(bodyStr);
+        } else {
+          const res = await callApi<{ id: string; quoteNumber: string; status: string }>('/api/quotes', 'POST', body);
+          setDraftId(res.id);
+          setLastSavedJSON(bodyStr);
+          window.history.replaceState(null, '', `/quotes/${res.id}/edit`);
+        }
+      } catch (err) {
+        // silently fail autosave errors
+      }
+    }, 1500);
+
+    return () => clearTimeout(t);
+  }, [values, lines, calc, customerId, draftId, lastSavedJSON, saving, uploads]);
+
   const submit = async (intent: QuoteBody['intent']) => {
     if (saving || uploads > 0) return;
     setBanner('');
@@ -202,9 +235,9 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
     setSaving(intent === 'draft' ? 'draft' : intent === 'send' ? 'send' : 'save');
     try {
       const body = buildBody(intent);
-      const res = mode === 'create'
+      const res = !draftId
         ? await callApi<{ id: string; quoteNumber: string; status: string }>('/api/quotes', 'POST', body)
-        : await callApi<{ id: string; quoteNumber: string; status: string }>(`/api/quotes/${quote!.id}`, 'PUT', body);
+        : await callApi<{ id: string; quoteNumber: string; status: string }>(`/api/quotes/${draftId}`, 'PUT', body);
       toast.success(mode === 'create' ? `${res.quoteNumber} created` : `${res.quoteNumber} saved`);
       router.push(`/quotes/${res.id}${intent === 'send' ? '?send=1' : ''}`);
       router.refresh();

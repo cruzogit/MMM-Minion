@@ -1,0 +1,1 @@
+import { GET } from "./src/app/api/records/[module]/lookups/route"; import { NextRequest } from "next/server"; async function main() { const req = new NextRequest("http://localhost:3000/api/records/quotes/lookups?kind=deals&q="); const res = await GET(req, { params: Promise.resolve({ module: "quotes" }) }); console.log(await res.json()); } main().catch(console.error);

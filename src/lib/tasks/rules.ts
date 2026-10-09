@@ -1,6 +1,7 @@
 // The Tasks module's rules in one place: task types, the six views, who may see what, search, sorting and the wording of
 // "time left". Pure functions (no database, no server-only imports) so the page, the API and the tests all share them.
 import type { Prisma } from "@prisma/client";
+import type { TaskLayout } from "./layout-shared";
 
 // ---------------------------------------------------------------------------
 // Task type (stored in Task.taskType) and the six status views
@@ -12,7 +13,8 @@ export const TASK_TYPES = [
   { id: "deal", label: "Deal Task" },
   { id: "office", label: "Office Task" },
 ] as const;
-export type TaskTypeId = (typeof TASK_TYPES)[number]["id"];
+// The built-in type ids are task | lead | project | deal | office; types added in Edit Page Layout are ct_xxxx
+export type TaskTypeId = string;
 
 export const TASK_VIEWS = [
   { id: "ongoing", label: "Ongoing Task", empty: "No ongoing tasks" },
@@ -22,7 +24,8 @@ export const TASK_VIEWS = [
   { id: "assigned", label: "Assigned Task", empty: "No assigned tasks" },
   { id: "completed", label: "Completed Task", empty: "No completed tasks" },
 ] as const;
-export type TaskViewId = (typeof TASK_VIEWS)[number]["id"];
+// The built-in tab ids are the six above; statuses added in Edit Page Layout are cs_xxxx
+export type TaskViewId = string;
 
 // The CRM's own task statuses (comment on Task.status in schema.prisma). Nothing new is invented.
 export const TASK_STATUSES = ["Not Started", "Assigned", "In Progress", "Blocked", "Waiting", "Completed", "Verified", "Closed"] as const;
@@ -40,8 +43,8 @@ export const TASK_DATE_FIELDS = [
 ] as const;
 export type TaskDateField = (typeof TASK_DATE_FIELDS)[number]["id"];
 
-export const isTaskType = (v: unknown): v is TaskTypeId => TASK_TYPES.some(t => t.id === v);
-export const isTaskView = (v: unknown): v is TaskViewId => TASK_VIEWS.some(t => t.id === v);
+export const isTaskType = (v: unknown, layout?: TaskLayout): v is TaskTypeId => (layout ? layout.types : TASK_TYPES).some(t => t.id === v);
+export const isTaskView = (v: unknown, layout?: TaskLayout): v is TaskViewId => (layout ? layout.statuses : TASK_VIEWS).some(t => t.id === v);
 
 // ---------------------------------------------------------------------------
 // URL parameters of the page (?type=lead&view=ongoing&q=water&sort=due&dir=asc&page=2&dateField=due&from=2026-10-01&to=2026-10-31)
@@ -58,7 +61,7 @@ export type TaskListParams = {
   to?: string;
 };
 
-export function parseTaskParams(raw: Record<string, string | string[] | undefined>): TaskListParams {
+export function parseTaskParams(raw: Record<string, string | string[] | undefined>, layout?: TaskLayout): TaskListParams {
   const one = (k: string) => (Array.isArray(raw[k]) ? (raw[k] as string[])[0] : (raw[k] as string | undefined));
   const day = (k: string) => {
     const v = one(k);
@@ -69,8 +72,8 @@ export function parseTaskParams(raw: Record<string, string | string[] | undefine
   const sort = one("sort");
   const dateField = one("dateField");
   return {
-    type: isTaskType(type) ? type : "task",
-    view: isTaskView(view) ? view : "ongoing",
+    type: isTaskType(type, layout) ? type : layout?.types.find(t => !t.hidden)?.id ?? "task",
+    view: isTaskView(view, layout) ? view : layout?.statuses.find(s => !s.hidden)?.id ?? "ongoing",
     q: one("q")?.trim().slice(0, 100) || undefined,
     sort: (TASK_SORTS as readonly string[]).includes(sort ?? "") ? (sort as TaskSortKey) : undefined,
     dir: one("dir") === "asc" ? "asc" : "desc",
@@ -99,7 +102,8 @@ export function taskVisibility(scope: TaskScope): Prisma.TaskWhereInput {
 const ownerSide = (scope: TaskScope): Prisma.TaskWhereInput => (scope.all ? {} : { assigneeId: { in: scope.people } });
 
 // The six views, from the legacy page's categorization, on top of the person scope
-function viewClause(view: TaskViewId, scope: TaskScope, now: Date): Prisma.TaskWhereInput {
+// `custom` maps the id of a status added in Edit Page Layout to its label: such a tab lists the tasks that were given that status
+function viewClause(view: TaskViewId, scope: TaskScope, now: Date, custom?: Map<string, string>): Prisma.TaskWhereInput {
   const active: Prisma.TaskWhereInput = { status: { notIn: COMPLETED_STATUSES } };
   switch (view) {
     case "completed":
@@ -114,6 +118,10 @@ function viewClause(view: TaskViewId, scope: TaskScope, now: Date): Prisma.TaskW
       return { AND: [active, { startDate: { gt: now } }] };
     case "assigned": // tasks I gave to someone, whatever their status
       return scope.me ? { assignedByEmployeeId: scope.me } : { id: "__no_access__" };
+    default: {
+      const label = custom?.get(view);
+      return label ? { status: label } : { id: "__no_access__" };
+    }
   }
 }
 
@@ -143,8 +151,8 @@ export type TaskDateRange = { field: TaskDateField; from?: Date; to?: Date };
 
 const DATE_COLUMN = { start: "startDate", due: "dueDate", assigned: "assignedAt" } as const;
 
-export function buildTaskWhere(params: Pick<TaskListParams, "type" | "view" | "q">, scope: TaskScope, now: Date, range?: TaskDateRange): Prisma.TaskWhereInput {
-  const AND: Prisma.TaskWhereInput[] = [taskVisibility(scope), { taskType: params.type }, viewClause(params.view, scope, now)];
+export function buildTaskWhere(params: Pick<TaskListParams, "type" | "view" | "q">, scope: TaskScope, now: Date, range?: TaskDateRange, custom?: Map<string, string>): Prisma.TaskWhereInput {
+  const AND: Prisma.TaskWhereInput[] = [taskVisibility(scope), { taskType: params.type }, viewClause(params.view, scope, now, custom)];
   if (params.q) AND.push(searchClause(params.q));
   if (range && (range.from || range.to)) {
     AND.push({ [DATE_COLUMN[range.field]]: { ...(range.from ? { gte: range.from } : {}), ...(range.to ? { lt: range.to } : {}) } });
@@ -153,8 +161,8 @@ export function buildTaskWhere(params: Pick<TaskListParams, "type" | "view" | "q
 }
 
 // Same filters for the six counts, whatever view is open
-export function buildViewCountWhere(view: TaskViewId, params: Pick<TaskListParams, "type" | "q">, scope: TaskScope, now: Date, range?: TaskDateRange) {
-  return buildTaskWhere({ type: params.type, view, q: params.q }, scope, now, range);
+export function buildViewCountWhere(view: TaskViewId, params: Pick<TaskListParams, "type" | "q">, scope: TaskScope, now: Date, range?: TaskDateRange, custom?: Map<string, string>) {
+  return buildTaskWhere({ type: params.type, view, q: params.q }, scope, now, range, custom);
 }
 
 // Default order follows the legacy page: newest start first; most overdue first for Incomplete; latest completion first for Completed

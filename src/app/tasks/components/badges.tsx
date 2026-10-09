@@ -1,12 +1,12 @@
-import { TASK_TYPES, type TaskTypeId } from '@/lib/tasks/rules';
+import type { TaskTypeId } from '@/lib/tasks/rules';
 
-const TYPE_COLOR: Record<TaskTypeId, string> = { task: '#6b7280', lead: '#f59e0b', project: '#2563eb', deal: '#16a34a', office: '#7c3aed' };
-
-export const typeLabel = (type: TaskTypeId) => TASK_TYPES.find(t => t.id === type)?.label ?? 'Task';
+const TYPE_COLOR: Record<string, string> = { task: '#6b7280', lead: '#f59e0b', project: '#2563eb', deal: '#16a34a', office: '#7c3aed' };
+const CUSTOM_COLORS = ['#0891b2', '#db2777', '#65a30d', '#ea580c', '#4f46e5', '#0d9488'];
+const colorOf = (type: TaskTypeId) => TYPE_COLOR[type] ?? CUSTOM_COLORS[[...type].reduce((a, c) => a + c.charCodeAt(0), 0) % CUSTOM_COLORS.length];
 
 // Small coloured tag showing the task's type; it sits beside the Task Name and never changes it
-export function TypeTag({ type }: { type: TaskTypeId }) {
-  return <span style={{ background: TYPE_COLOR[type] }} className="inline-block text-white text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap">{typeLabel(type)}</span>;
+export function TypeTag({ type, label }: { type: TaskTypeId; label: string }) {
+  return <span style={{ background: colorOf(type) }} className="inline-block text-white text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap">{label}</span>;
 }
 
 const STATUS_STYLE: Record<string, string> = {

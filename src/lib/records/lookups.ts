@@ -10,7 +10,7 @@ import { getLayout } from "./layout";
 import { isId } from "./values";
 import type { FieldOption, LookupItem, ModuleId, RecordRefs } from "./types";
 
-const LIMIT = 30;
+const LIMIT = 250;
 
 const contains = (q: string) => ({ contains: q, mode: "insensitive" as const });
 

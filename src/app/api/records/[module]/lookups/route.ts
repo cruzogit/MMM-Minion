@@ -23,7 +23,12 @@ export async function GET(request: Request, { params }: Params) {
     switch (kind) {
       case "users": return NextResponse.json({ items: await activeUsers() });
       case "approvers": return NextResponse.json({ items: await approvers(def.id) });
-      case "deals": return NextResponse.json({ items: await searchDeals(q, url.searchParams.get("customerId") ?? undefined) });
+      case "deals": {
+        const cid = url.searchParams.get("customerId") ?? undefined;
+        const res = await searchDeals(q, cid);
+        console.log("Lookups API: deals requested", { q, cid, resCount: res.length });
+        return NextResponse.json({ items: res });
+      }
       case "materialVendors": return NextResponse.json({ items: await searchMaterialVendors(q) });
       case "serviceVendors": return NextResponse.json({ items: await searchServiceVendors(q) });
       case "customers": return NextResponse.json({ items: (await searchCustomers(q)).map(c => ({ id: c.id, label: c.label, sub: c.sub, tag: c.tag })) });

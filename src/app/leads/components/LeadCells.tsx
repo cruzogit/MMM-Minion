@@ -285,8 +285,7 @@ export function StatusCell({ rate, status }: { rate: number | null; status: Lead
 export function SourceCell({ row }: { row: LeadRow }) {
   return (
     <div className="space-y-1 text-[12px]">
-      <div className="text-gray-700">{row.sourceLabel ?? '—'}</div>
-      {row.modeOfCustomerLabel && <div className="text-gray-500" title="Mode of Customer">({row.modeOfCustomerLabel})</div>}
+      <div className="text-gray-700">{row.modeOfCustomerLabel ?? '—'}</div>
     </div>
   );
 }

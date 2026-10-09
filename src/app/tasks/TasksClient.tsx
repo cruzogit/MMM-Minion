@@ -6,7 +6,9 @@ import { Check, ChevronLeft, ChevronRight, ClipboardList, X } from 'lucide-react
 import { callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import LightConfirm from '@/app/leads/components/LightConfirm';
-import { TASK_TYPES, TASK_VIEWS, type TaskListParams, type TaskSortKey, type TaskTypeId, type TaskViewId } from '@/lib/tasks/rules';
+import { type TaskListParams, type TaskSortKey } from '@/lib/tasks/rules';
+import { TASK_VIEWS } from '@/lib/tasks/rules';
+import { TaskLayoutButton } from './components/TaskLayoutEditor';
 import type { TaskDetail, TaskListResult, TaskOptions, TaskRow } from '@/lib/tasks/types';
 import CreateTaskModal from './components/CreateTaskModal';
 import TaskDetailsModal from './components/TaskDetailsModal';
@@ -20,8 +22,6 @@ type Dialog =
   | { kind: 'delete'; row: TaskRow }
   | null;
 
-const typeLabel = (id: TaskTypeId) => TASK_TYPES.find(t => t.id === id)!.label;
-const viewMeta = (id: TaskViewId) => TASK_VIEWS.find(v => v.id === id)!;
 
 export default function TasksClient({ data, params, options, canCreate, currentUserName }: {
   data: TaskListResult;
@@ -92,7 +92,13 @@ export default function TasksClient({ data, params, options, canCreate, currentU
   };
 
   const filtersOn = !!(params.q || params.from || params.to);
-  const view = viewMeta(params.view);
+  const layout = options.layout;
+  // The type pills and status tabs follow Edit Page Layout; the one that is open is always shown, even if it was hidden since
+  const typeLabel = (id: string) => layout.types.find(t => t.id === id)?.label ?? 'Task';
+  const typePills = layout.types.filter(t => !t.hidden || t.id === params.type);
+  const statusTabs = layout.statuses.filter(s => !s.hidden || s.id === params.view);
+  const viewStatus = layout.statuses.find(s => s.id === params.view);
+  const view = { label: viewStatus?.label ?? 'Tasks', empty: TASK_VIEWS.find(v => v.id === params.view)?.empty ?? 'No tasks with this status' };
   const pageButtons = Array.from({ length: data.pageCount }, (_, i) => i + 1).filter(p => p === 1 || p === data.pageCount || Math.abs(p - data.page) <= 2);
   const offset = (data.page - 1) * data.pageSize;
 
@@ -106,24 +112,27 @@ export default function TasksClient({ data, params, options, canCreate, currentU
             <span className="w-9 h-9 rounded-full bg-[#f5b800] flex items-center justify-center shrink-0"><Check className="w-5 h-5 text-white" strokeWidth={3} /></span>
             <h1 className="text-[26px] sm:text-[30px] font-medium text-[#3a3a3a] leading-tight">Task Management</h1>
           </div>
-          <TaskToolbar params={params} q={q} onQ={setQ} canCreate={canCreate}
-            onType={t => setParams({ type: t })} onDates={u => setParams(u)} onAdd={() => setDialog({ kind: 'create' })} />
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {options.canEditLayout && <TaskLayoutButton layout={layout} />}
+            <TaskToolbar params={params} q={q} onQ={setQ} canCreate={canCreate} types={typePills}
+              onType={t => setParams({ type: t })} onDates={u => setParams(u)} onAdd={() => setDialog({ kind: 'create' })} />
+          </div>
         </div>
 
         <section aria-label="Task Type" className="mt-6 border border-gray-200 rounded-lg px-4 py-3">
           <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">Task Type</h2>
           <div className="flex flex-wrap gap-2">
-            {TASK_TYPES.map(t => <button key={t.id} type="button" aria-pressed={params.type === t.id} onClick={() => setParams({ type: t.id })} className={pill(params.type === t.id)}>{t.label}</button>)}
+            {typePills.map(t => <button key={t.id} type="button" aria-pressed={params.type === t.id} onClick={() => setParams({ type: t.id })} className={pill(params.type === t.id)}>{t.label}</button>)}
           </div>
         </section>
 
         <section aria-label="Task Status" className="mt-3 border border-gray-200 rounded-lg px-4 py-3">
           <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">Task Status</h2>
           <div className="flex flex-wrap gap-2">
-            {TASK_VIEWS.map(v => (
+            {statusTabs.map(v => (
               <button key={v.id} type="button" aria-pressed={params.view === v.id} onClick={() => setParams({ view: v.id })} className={`${pill(params.view === v.id)} inline-flex items-center gap-2`}>
                 {v.label}
-                <span className={`min-w-[22px] px-1.5 h-[20px] rounded-full text-[11px] font-bold inline-flex items-center justify-center ${params.view === v.id ? 'bg-white/70 text-[#1f1f1f]' : 'bg-gray-100 text-gray-600'}`}>{data.counts[v.id]}</span>
+                <span className={`min-w-[22px] px-1.5 h-[20px] rounded-full text-[11px] font-bold inline-flex items-center justify-center ${params.view === v.id ? 'bg-white/70 text-[#1f1f1f]' : 'bg-gray-100 text-gray-600'}`}>{data.counts[v.id] ?? 0}</span>
               </button>
             ))}
           </div>

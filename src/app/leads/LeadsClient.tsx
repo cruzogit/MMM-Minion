@@ -20,6 +20,7 @@ import FollowUpModal from './components/FollowUpModal';
 import FollowUpFilesModal from './components/FollowUpFilesModal';
 import CloseLeadModal from './components/CloseLeadModal';
 import ConvertLeadModal from './components/ConvertLeadModal';
+import ImportLeadsModal from './components/ImportLeadsModal';
 
 type Data = {
   rows: LeadRow[];
@@ -29,7 +30,7 @@ type Data = {
   pageSize: number;
 };
 
-type Dialog = { kind: 'add' } | { kind: 'edit'; row: LeadRow } | { kind: 'view'; row: LeadRow } | { kind: 'delete'; row: LeadRow } | { kind: 'duplicate'; row: LeadRow } | { kind: 'layout' } | { kind: 'followup'; row: LeadRow } | { kind: 'followups'; row: LeadRow } | { kind: 'close'; row: LeadRow } | { kind: 'reopen'; row: LeadRow } | { kind: 'convert'; row: LeadRow } | { kind: 'needFollowUp'; row: LeadRow } | null;
+type Dialog = { kind: 'add' } | { kind: 'edit'; row: LeadRow } | { kind: 'view'; row: LeadRow } | { kind: 'delete'; row: LeadRow } | { kind: 'duplicate'; row: LeadRow } | { kind: 'layout' } | { kind: 'followup'; row: LeadRow } | { kind: 'followups'; row: LeadRow } | { kind: 'close'; row: LeadRow } | { kind: 'reopen'; row: LeadRow } | { kind: 'convert'; row: LeadRow } | { kind: 'needFollowUp'; row: LeadRow } | { kind: 'import' } | null;
 
 export default function LeadsClient({ data, params, options, currentEmployeeId, abilities, storageReady }: {
   data: Data;
@@ -142,13 +143,16 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
             params={params}
             canCreate={abilities.create}
             canExport={abilities.export}
+            canImport={abilities.create}
             canEditLayout={abilities.layout}
             refreshing={pending}
             onAdd={() => setDialog({ kind: 'add' })}
             onEditLayout={() => setDialog({ kind: 'layout' })}
             onRefresh={clearAll}
             onParams={setParams}
+            onImport={() => setDialog({ kind: 'import' })}
             exportHref={exportHref}
+            showImport={true}
           />
         </div>
 
@@ -180,12 +184,56 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
           />
         </div>
 
-        {data.pageCount > 1 && (
+        {(data.pageCount > 1 || data.pageSize !== 50) && (
           <div className="mt-5 flex items-center justify-end gap-3 text-[13px] text-gray-600">
             {pending && <Loader2 className="w-4 h-4 animate-spin" />}
-            <span>Page {data.page} of {data.pageCount} · {data.pageSize} per page</span>
-            <button disabled={data.page <= 1} onClick={() => setParams({ page: String(data.page - 1) })} aria-label="Previous page" className="w-9 h-9 border border-gray-300 rounded flex items-center justify-center disabled:opacity-40 hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
-            <button disabled={data.page >= data.pageCount} onClick={() => setParams({ page: String(data.page + 1) })} aria-label="Next page" className="w-9 h-9 border border-gray-300 rounded flex items-center justify-center disabled:opacity-40 hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
+            <span className="flex items-center gap-1">
+              Page 
+              <input 
+                type="number" 
+                min={1} 
+                max={data.pageCount} 
+                defaultValue={data.page}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const p = parseInt(e.currentTarget.value);
+                    if (p >= 1 && p <= data.pageCount && p !== data.page) setParams({ page: String(p) });
+                  }
+                }}
+                onBlur={e => {
+                  const p = parseInt(e.currentTarget.value);
+                  if (p >= 1 && p <= data.pageCount && p !== data.page) setParams({ page: String(p) });
+                  else e.currentTarget.value = String(data.page);
+                }}
+                className="w-12 h-8 mx-1 px-1 border border-gray-300 rounded text-center outline-none focus:border-[#548df6]"
+              />
+              of {data.pageCount}
+            </span>
+            <span className="flex items-center gap-1 border-l border-gray-300 pl-3">
+              <input 
+                type="number" 
+                min={1} 
+                max={1000} 
+                defaultValue={data.pageSize}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const l = parseInt(e.currentTarget.value);
+                    if (l >= 1 && l <= 1000 && l !== data.pageSize) setParams({ limit: String(l), page: '1' });
+                  }
+                }}
+                onBlur={e => {
+                  const l = parseInt(e.currentTarget.value);
+                  if (l >= 1 && l <= 1000 && l !== data.pageSize) setParams({ limit: String(l), page: '1' });
+                  else e.currentTarget.value = String(data.pageSize);
+                }}
+                className="w-14 h-8 mx-1 px-1 border border-gray-300 rounded text-center outline-none focus:border-[#548df6]"
+              />
+              per page
+            </span>
+            <div className="flex gap-1 ml-1">
+              <button disabled={data.page <= 1} onClick={() => setParams({ page: String(data.page - 1) })} aria-label="Previous page" className="w-8 h-8 border border-gray-300 rounded flex items-center justify-center disabled:opacity-40 hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
+              <button disabled={data.page >= data.pageCount} onClick={() => setParams({ page: String(data.page + 1) })} aria-label="Next page" className="w-8 h-8 border border-gray-300 rounded flex items-center justify-center disabled:opacity-40 hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
+            </div>
           </div>
         )}
       </div>
@@ -218,6 +266,12 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
       )}
       {dialog?.kind === 'view' && <ViewLeadModal leadId={dialog.row.id} options={options} onClose={() => setDialog(null)} />}
       {!dialog && search.get('view') && <ViewLeadModal key={search.get('view')} leadId={search.get('view')!} options={options} onClose={() => setParams({ view: undefined }, true)} />}
+      {dialog?.kind === 'import' && (
+        <ImportLeadsModal
+          onClose={() => setDialog(null)}
+          onImported={afterSave}
+        />
+      )}
 
       {(dialog?.kind === 'delete' || dialog?.kind === 'duplicate' || dialog?.kind === 'reopen') && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">

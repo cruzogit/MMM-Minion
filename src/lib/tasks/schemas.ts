@@ -11,7 +11,12 @@ const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a valid time");
 const optionalDay = day.nullable().optional().transform(v => v || null);
 const optionalClock = clock.nullable().optional().transform(v => v || null);
 
-const TYPES = ["task", "lead", "project", "deal", "office"] as const;
+// The built-in types are task | lead | project | deal | office; types added in Edit Page Layout are ct_xxxx. The service checks the id against the layout.
+const typeId = z.string({ required_error: "Choose the task type" }).trim().min(1, "Choose the task type").max(64);
+type TypeId = string;
+
+// Values of the fields added in Edit Page Layout, keyed by field key; the service checks them against the layout
+const customValues = z.record(z.string().max(64), z.union([z.string().max(2000), z.number(), z.null()])).optional();
 
 const taskFields = {
   title: z.string({ required_error: "Task Name is required" }).trim().min(1, "Task Name is required").max(200),
@@ -27,11 +32,13 @@ const taskFields = {
   leadId: optionalId,
   projectId: optionalId,
   dealId: optionalId,
+  customFields: customValues,
+  statusLabel: optionalText(60), // a status added in Edit Page Layout (or Not Started); empty keeps the current status
 };
 
 // What each task type must (and must not) be linked to
-function linkRules(v: { leadId: string | null; projectId: string | null; dealId: string | null }, type: (typeof TYPES)[number], ctx: z.RefinementCtx) {
-  const need = { lead: "leadId", project: "projectId", deal: "dealId" } as const;
+function linkRules(v: { leadId: string | null; projectId: string | null; dealId: string | null }, type: TypeId, ctx: z.RefinementCtx) {
+  const need: Record<string, string> = { lead: "leadId", project: "projectId", deal: "dealId" };
   const label = { leadId: "Lead", projectId: "Project", dealId: "Deal" } as const;
   for (const key of ["leadId", "projectId", "dealId"] as const) {
     const wanted = type !== "task" && type !== "office" && need[type] === key;
@@ -51,7 +58,7 @@ const dateOrder = (v: { startDate: string | null; startTime: string | null; dueD
 };
 
 export const taskInputSchema = z
-  .object({ taskType: z.enum(TYPES), ...taskFields })
+  .object({ taskType: typeId, ...taskFields })
   .strict()
   .superRefine((v, ctx) => {
     linkRules(v, v.taskType, ctx);
@@ -62,7 +69,7 @@ export type TaskInput = z.infer<typeof taskInputSchema>;
 // Editing keeps the stored task type, so the type is not accepted here
 export const taskEditSchema = z.object(taskFields).strict();
 export type TaskEditInput = z.infer<typeof taskEditSchema>;
-export const checkEditAgainstType = (v: TaskEditInput, type: (typeof TYPES)[number]) => {
+export const checkEditAgainstType = (v: TaskEditInput, type: TypeId) => {
   const issues: { path: string; message: string }[] = [];
   const ctx = { addIssue: (i: { path: (string | number)[]; message: string }) => issues.push({ path: i.path.join("."), message: i.message }) } as unknown as z.RefinementCtx;
   linkRules(v, type, ctx);

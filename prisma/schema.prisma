@@ -240,7 +240,6 @@ model Employee {
   enrollments             Enrollment[]
   certifications          Certification[]
   skills                  EmployeeSkill[]
-  resourcesOwned          Resource[]            @relation("ResourceOwner")
 
   // CRM Relations
   leadsAsExec            Lead[]                       @relation("LeadSalesExecutive")
@@ -331,7 +330,6 @@ model Customer {
   projects   Project[]
   landscapes Landscape[]
   payments   Payment[]
-  resources  Resource[]
   quotes     Quote[]
   followUps  FollowUp[]
 
@@ -436,7 +434,6 @@ model Lead {
   followUps    FollowUp[]
   project      Project?
   landscapes   Landscape[]
-  resources    Resource[]
   quotes       Quote[]
   crmAuditLogs CRMAuditLog[]
 
@@ -471,6 +468,7 @@ model LeadOption {
   parent    LeadOption?  @relation("LeadOptionTree", fields: [parentId], references: [id])
   children  LeadOption[] @relation("LeadOptionTree")
   sortOrder Int          @default(0)
+  isActive  Boolean      @default(true)
 
   asProductOrService Lead[] @relation("LeadProductOrService")
   asRequirement      Lead[] @relation("LeadRequirement")
@@ -664,7 +662,6 @@ model Deal {
 
   quotes             Quote[]
   projects           Project[]
-  resources          Resource[]
   followUps          FollowUp[]
   crmAuditLogs       CRMAuditLog[]
   prePayments        PrePayment[]
@@ -775,16 +772,16 @@ model QuoteItem {
   boqItemId String?
 
   // Quotes module: the line as it is shown on the quote (name, HSN, tax as they were when it was saved)
-  sortOrder    Int          @default(0)
-  itemId       String?
-  item         CatalogItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
-  name         String?
-  hsn          String?
-  taxId        String?
-  taxName      String?
-  taxRate      Decimal?     @db.Decimal(7, 3)
-  taxAmount    Decimal?     @db.Decimal(14, 2)
-  customFields Json?
+  sortOrder      Int          @default(0)
+  itemId         String?
+  item           CatalogItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  name           String?
+  hsn            String?
+  taxId          String?
+  taxName        String?
+  taxRate        Decimal?     @db.Decimal(7, 3)
+  taxAmount      Decimal?     @db.Decimal(14, 2)
+  customFields   Json?
   kind           String? // Goods or Service, as the line was saved (decides HSN or SAC)
   taskTemplateId String? // an option of the Template dropdown in Project → Edit Page Layout
 
@@ -915,7 +912,6 @@ model Project {
   boqItems       BoqItem[]
   expenses       Expense[]
   payments       Payment[]
-  resources      Resource[]
   landscapes     Landscape[]
   quotes         Quote[]
 
@@ -1098,6 +1094,7 @@ model Task {
   landscapeId String?
   landscape   Landscape? @relation(fields: [landscapeId], references: [id])
   productId   String? // typed in by the user (there is no Product table)
+  customFields Json? // values of the fields added in Tasks → Edit Page Layout, keyed by field key (cf_...)
 
   priority   String    @default("Medium") // Low, Medium, High
   status     String    @default("Not Started") // Not Started, Assigned, In Progress, Blocked, Waiting, Completed, Verified, Closed
@@ -1129,7 +1126,6 @@ model Task {
   recurringSeries     TaskRecurringSeries? @relation(fields: [recurringSeriesId], references: [id], onDelete: SetNull)
 
   // Sub-items
-  resources  Resource[]
   checklists TaskChecklistItem[]
   comments   TaskComment[]
   auditLogs  TaskAuditLog[]
@@ -1648,33 +1644,6 @@ model PointsLedger {
 // ---------------------------------------------------------
 // 8. Resources (Supabase Storage Metadata)
 // ---------------------------------------------------------
-model Resource {
-  id          String  @id @default(cuid())
-  name        String
-  storagePath String
-  mimeType    String?
-  size        Int?
-  version     Int     @default(1)
-
-  ownerId String?
-  owner   Employee? @relation("ResourceOwner", fields: [ownerId], references: [id])
-
-  projectId   String?
-  project     Project?   @relation(fields: [projectId], references: [id])
-  customerId  String?
-  customer    Customer?  @relation(fields: [customerId], references: [id])
-  leadId      String?
-  lead        Lead?      @relation(fields: [leadId], references: [id])
-  dealId      String?
-  deal        Deal?      @relation(fields: [dealId], references: [id])
-  taskId      String?
-  task        Task?      @relation(fields: [taskId], references: [id])
-  landscapeId String?
-  landscape   Landscape? @relation(fields: [landscapeId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
 
 // ---------------------------------------------------------
 // 9. Notifications, Announcements, Misc
@@ -1753,7 +1722,6 @@ model Landscape {
   inspections     LandscapeInspection[]
   issues          LandscapeIssue[]
   tasks           Task[]
-  resources       Resource[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

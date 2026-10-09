@@ -75,8 +75,7 @@ export async function getProjectById(id: string) {
         },
         payments: {
           orderBy: { date: 'desc' }
-        },
-        resources: true,
+        }
       }
     });
     return project;

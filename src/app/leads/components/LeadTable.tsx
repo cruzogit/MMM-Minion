@@ -17,7 +17,7 @@ const COLUMN_DEFS: Record<LeadColumnId, Column> = {
   status: { id: 'status', label: 'Lead Status', sort: 'status', width: 'w-[215px]' },
   followup: { id: 'followup', label: 'Follow-up', width: 'w-[135px]' },
   state: { id: 'state', label: 'Status', filter: 'state', width: 'w-[140px]' },
-  source: { id: 'source', label: 'Source', sort: 'source', width: 'w-[110px]' },
+  source: { id: 'source', label: 'Mode of Customer', sort: 'source', width: 'w-[110px]' },
   category: { id: 'category', label: 'Categories', sort: 'category', width: 'w-[200px]' },
   location: { id: 'location', label: 'Location', sort: 'location', width: 'w-[210px]' },
 };
@@ -117,7 +117,7 @@ export default function LeadTable({ rows, sort, dir, abilities, loading, columnO
               <CardSection title="Lead Status"><LeadStatusCell row={row} canEdit={abilities.edit} inline={inline} /></CardSection>
               <CardSection title="Categories"><CategoryCell row={row} /></CardSection>
               <CardSection title="Location"><LocationCell row={row} canEdit={abilities.edit} inline={inline} /></CardSection>
-              <CardSection title="Source"><SourceCell row={row} /></CardSection>
+              <CardSection title="Mode of Customer"><SourceCell row={row} /></CardSection>
               <div className="flex gap-6"><CardSection title="Follow-up"><FollowUpCell row={row} canEdit={abilities.edit} onUpload={() => onFollowUp(row)} onView={() => onViewFollowUps(row)} /></CardSection><CardSection title="Status"><StatusCell rate={row.conventionalRate} status={row.status} /></CardSection></div>
             </div>
           </article>

@@ -22,6 +22,7 @@ import CloseLeadModal from '@/app/leads/components/CloseLeadModal';
 import DealTable from './components/DealTable';
 import DealLayoutEditor from './components/DealLayoutEditor';
 import ConvertProjectModal, { type ConvertField } from './components/ConvertProjectModal';
+import ImportDealsModal from './components/ImportDealsModal';
 
 type Data = {
   rows: DealRow[];
@@ -31,7 +32,7 @@ type Data = {
   pageSize: number;
 };
 
-type Dialog = { kind: 'edit'; row: DealRow } | { kind: 'view'; row: DealRow } | { kind: 'delete'; row: DealRow } | { kind: 'duplicate'; row: DealRow } | { kind: 'revive'; row: DealRow } | { kind: 'layout' } | { kind: 'followup'; row: DealRow } | { kind: 'followups'; row: DealRow } | { kind: 'close'; row: DealRow } | { kind: 'project'; row: DealRow } | null;
+type Dialog = { kind: 'edit'; row: DealRow } | { kind: 'view'; row: DealRow } | { kind: 'delete'; row: DealRow } | { kind: 'duplicate'; row: DealRow } | { kind: 'revive'; row: DealRow } | { kind: 'layout' } | { kind: 'followup'; row: DealRow } | { kind: 'followups'; row: DealRow } | { kind: 'close'; row: DealRow } | { kind: 'project'; row: DealRow } | { kind: 'import' } | null;
 
 // The Leads page, for the deals: the same layout and behaviour (live search, quick filters, header sort / filter menus, dates, paging in the
 // address, reset, download), with Convert to Project (the icon) and View, Edit, Close Deal, Duplicate and Delete (the three dots) in Actions.
@@ -160,7 +161,9 @@ export default function DealsClient({ data, params, options, lists, columnOrder,
             dateTypes={DEAL_DATE_FILTER_TYPES}
             layoutLabel="Edit Deal Layout"
             noun="deals"
-            showImport={false}
+            canImport={abilities.create}
+            onImport={() => setDialog({ kind: 'import' })}
+            showImport={true}
           />
         </div>
 
@@ -191,12 +194,56 @@ export default function DealsClient({ data, params, options, lists, columnOrder,
           />
         </div>
 
-        {data.pageCount > 1 && (
+        {(data.pageCount > 1 || data.pageSize !== 50) && (
           <div className="mt-5 flex items-center justify-end gap-3 text-[13px] text-gray-600">
             {pending && <Loader2 className="w-4 h-4 animate-spin" />}
-            <span>Page {data.page} of {data.pageCount} · {data.pageSize} per page</span>
-            <button disabled={data.page <= 1} onClick={() => setParams({ page: String(data.page - 1) })} aria-label="Previous page" className="w-9 h-9 border border-gray-300 rounded flex items-center justify-center disabled:opacity-40 hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
-            <button disabled={data.page >= data.pageCount} onClick={() => setParams({ page: String(data.page + 1) })} aria-label="Next page" className="w-9 h-9 border border-gray-300 rounded flex items-center justify-center disabled:opacity-40 hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
+            <span className="flex items-center gap-1">
+              Page 
+              <input 
+                type="number" 
+                min={1} 
+                max={data.pageCount} 
+                defaultValue={data.page}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const p = parseInt(e.currentTarget.value);
+                    if (p >= 1 && p <= data.pageCount && p !== data.page) setParams({ page: String(p) });
+                  }
+                }}
+                onBlur={e => {
+                  const p = parseInt(e.currentTarget.value);
+                  if (p >= 1 && p <= data.pageCount && p !== data.page) setParams({ page: String(p) });
+                  else e.currentTarget.value = String(data.page);
+                }}
+                className="w-12 h-8 mx-1 px-1 border border-gray-300 rounded text-center outline-none focus:border-[#548df6]"
+              />
+              of {data.pageCount}
+            </span>
+            <span className="flex items-center gap-1 border-l border-gray-300 pl-3">
+              <input 
+                type="number" 
+                min={1} 
+                max={1000} 
+                defaultValue={data.pageSize}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const l = parseInt(e.currentTarget.value);
+                    if (l >= 1 && l <= 1000 && l !== data.pageSize) setParams({ limit: String(l), page: '1' });
+                  }
+                }}
+                onBlur={e => {
+                  const l = parseInt(e.currentTarget.value);
+                  if (l >= 1 && l <= 1000 && l !== data.pageSize) setParams({ limit: String(l), page: '1' });
+                  else e.currentTarget.value = String(data.pageSize);
+                }}
+                className="w-14 h-8 mx-1 px-1 border border-gray-300 rounded text-center outline-none focus:border-[#548df6]"
+              />
+              per page
+            </span>
+            <div className="flex gap-1 ml-1">
+              <button disabled={data.page <= 1} onClick={() => setParams({ page: String(data.page - 1) })} aria-label="Previous page" className="w-8 h-8 border border-gray-300 rounded flex items-center justify-center disabled:opacity-40 hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
+              <button disabled={data.page >= data.pageCount} onClick={() => setParams({ page: String(data.page + 1) })} aria-label="Next page" className="w-8 h-8 border border-gray-300 rounded flex items-center justify-center disabled:opacity-40 hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
+            </div>
           </div>
         )}
       </div>
@@ -218,6 +265,12 @@ export default function DealsClient({ data, params, options, lists, columnOrder,
         <ConvertProjectModal key={dialog.row.id} row={dialog.row} fields={convertFields} onClose={() => setDialog(null)} onSaved={r => afterSave(`Deal ${r.dealNumber} converted to project ${r.code}`)} />
       )}
       {dialog?.kind === 'view' && <ViewLeadModal key={dialog.row.id} leadId={dialog.row.leadId} endpoint={`/api/deals/${dialog.row.id}`} title={`Deal ${dialog.row.code}`} options={options} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'import' && (
+        <ImportDealsModal
+          onClose={() => setDialog(null)}
+          onImported={afterSave}
+        />
+      )}
 
       {(dialog?.kind === 'delete' || dialog?.kind === 'duplicate' || dialog?.kind === 'revive') && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">

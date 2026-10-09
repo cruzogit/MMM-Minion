@@ -23,7 +23,6 @@ export async function createTask(formData: FormData) {
     const customerId = formData.get("customerId") as string;
     const leadId = formData.get("leadId") as string;
     const dealId = formData.get("dealId") as string;
-    const landscapeId = formData.get("landscapeId") as string;
 
     const requiresCompletionProof = formData.get("requiresCompletionProof") === "true";
     const requiresVerification = formData.get("requiresVerification") === "true";
@@ -82,7 +81,6 @@ export async function createTask(formData: FormData) {
         customerId: customerId || null,
         leadId: leadId || null,
         dealId: dealId || null,
-        landscapeId: landscapeId || null,
         requiresCompletionProof,
         requiresVerification,
         isRecurringInstance: isRecurring,
@@ -102,7 +100,6 @@ export async function createTask(formData: FormData) {
 
     revalidatePath("/tasks");
     if (projectId) revalidatePath(`/projects/${projectId}`);
-    if (landscapeId) revalidatePath(`/parks/${landscapeId}`);
     revalidatePath("/my-work");
 
     return { success: true, taskId: task.id };
@@ -133,7 +130,6 @@ export async function updateTaskStatus(taskId: string, status: string) {
     revalidatePath("/tasks");
     revalidatePath("/my-work");
     if (task.projectId) revalidatePath(`/projects/${task.projectId}`);
-    if (task.landscapeId) revalidatePath(`/parks/${task.landscapeId}`);
 
     return { success: true, task };
   } catch (error: any) {
