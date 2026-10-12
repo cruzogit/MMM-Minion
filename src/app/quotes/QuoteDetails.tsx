@@ -75,9 +75,13 @@ export default function QuoteDetails({ quote, layout, settings }: { quote: Quote
             </tr>
           </thead>
           <tbody>
-            {quote.lines.map((l, i) => (
+            {quote.lines.map((l, i) => l.custom?.isHeader === true ? (
+              <tr key={l.id} className="border-b border-[#ebeaf2] bg-[#f9f9fb]" data-line-header>
+                <td colSpan={9} className="px-3 py-2 font-semibold">{l.name}</td>
+              </tr>
+            ) : (
               <tr key={l.id} className="align-top border-b border-[#ebeaf2] last:border-b-0" data-line>
-                <td className="px-3 py-2 text-[#6d7189]">{i + 1}</td>
+                <td className="px-3 py-2 text-[#6d7189]">{quote.lines.slice(0, i).filter(x => x.custom?.isHeader !== true).length + 1}</td>
                 <td className="px-3 py-2"><div className="font-medium">{l.name}</div>{l.description && <div className="text-[12px] text-[#6d7189] whitespace-pre-line">{l.description}</div>}{l.hsn && !colOn('hsn') && <div className="text-[12px] text-[#6d7189]">{l.kind === 'Service' ? 'SAC' : l.kind === 'Goods' ? 'HSN' : 'HSN/SAC'} : {l.hsn}</div>}</td>
                 {colOn('taskTemplateId') && <td className="px-3 py-2">{l.taskTemplateName}</td>}
                 {colOn('hsn') && <td className="px-3 py-2">{l.hsn}</td>}

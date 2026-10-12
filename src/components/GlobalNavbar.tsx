@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Package, Boxes, Wrench, Wallet, HandCoins, CalendarCheck, LayoutTemplate, type LucideIcon } from 'lucide-react';
+import { Home, LayoutGrid, CheckCircle2, Users, UserCog, Search, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Package, Boxes, Wrench, Wallet, HandCoins, CalendarCheck, LayoutTemplate, type LucideIcon } from 'lucide-react';
 import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
-import SidebarLayoutEditor from './SidebarLayoutEditor';
+import SidebarLayoutEditor, { type SidebarGroup } from './SidebarLayoutEditor';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 const NAV_ICONS: Record<string, LucideIcon> = {
@@ -82,7 +82,7 @@ export default function GlobalNavbar() {
   const { data: session } = useSession();
   const router = useRouter();
   const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
-  const [layout, setLayout] = useState<any[] | null>(null);
+  const [layout, setLayout] = useState<SidebarGroup[] | null>(null);
 
   useEffect(() => {
     fetch('/api/settings/sidebar')
@@ -197,15 +197,15 @@ export default function GlobalNavbar() {
           };
 
           if (layout && layout.length > 0) {
-            const assignedLabels = new Set(layout.flatMap((g: any) => g.items || []));
+            const assignedLabels = new Set(layout.flatMap(g => g.items || []));
             const remaining = visibleNavItems.filter(i => !assignedLabels.has(i.label));
 
             return (
               <>
-                {layout.map((group: any) => {
+                {layout.map(group => {
                   const groupItems = (group.items || [])
-                    .map((label: string) => visibleNavItems.find(i => i.label === label))
-                    .filter(Boolean);
+                    .map(label => visibleNavItems.find(i => i.label === label))
+                    .filter((item): item is NonNullable<typeof item> => !!item);
                   if (groupItems.length === 0) return null;
                   return (
                     <div key={group.id} className="mb-3">

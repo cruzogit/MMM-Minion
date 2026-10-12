@@ -11,14 +11,16 @@ import { listHeader } from '@/lib/quotes/headers';
 import { QUOTE_STATUSES, type DisplaySettings, type QuoteAbilities, type QuoteListData, type QuoteListParams } from '@/lib/quotes/types';
 import { useToast } from '@/components/ui/Toast';
 import { LayoutEditor } from '../records/layout-editor/LayoutEditor';
+import type { DraftListItem } from '@/lib/quotes/draft-server';
 import { Button, DateBox, Menu, MenuItem, MenuRule, Modal, StatusText } from './ui';
+import InProgress from './InProgress';
 import { queryOf } from './urls';
 
 const WIDTH: Record<string, number> = { date: 176, quoteNumber: 204, reference: 381, status: 155, amount: 193, expiryDate: 150 };
 const SORTABLE = new Set(['date', 'quoteNumber', 'reference', 'customerId', 'status', 'amount', 'expiryDate']);
 
-export default function QuotesList({ layout, data, params, abilities, display }: {
-  layout: ModuleLayoutDto; data: QuoteListData; params: QuoteListParams; abilities: QuoteAbilities; display: DisplaySettings;
+export default function QuotesList({ layout, data, params, abilities, display, drafts }: {
+  layout: ModuleLayoutDto; data: QuoteListData; params: QuoteListParams; abilities: QuoteAbilities; display: DisplaySettings; drafts: DraftListItem[];
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -114,7 +116,7 @@ export default function QuotesList({ layout, data, params, abilities, display }:
         )}
 
         <div className="ml-auto flex items-center gap-[10px]">
-          {searchOpen && (
+          {searchOpen ? (
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-[#9ca0ab] absolute left-2.5 top-1/2 -translate-y-1/2" aria-hidden />
               <input
@@ -128,6 +130,16 @@ export default function QuotesList({ layout, data, params, abilities, display }:
               />
               <button type="button" aria-label="Close search" onClick={() => { setTerm(''); setSearchOpen(false); }} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[#9ca0ab] hover:text-[#22263b]"><X className="w-3.5 h-3.5" /></button>
             </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Search quotes"
+              title="Search quotes"
+              className="w-[32px] h-[32px] flex items-center justify-center rounded-[4px] border border-[#d7d5e1] hover:bg-[#f1f1fa] text-[#575a6f]"
+            >
+              <Search className="w-4 h-4" />
+            </button>
           )}
           {abilities.create && (
             <Link href="/quotes/new" className="inline-flex items-center gap-[6px] h-[32px] px-[10px] rounded-[4px] bg-[#548df6] hover:bg-[#4a82ea] text-white text-[13px] font-medium"><Plus className="w-[13px] h-[13px]" strokeWidth={2.5} /> New</Link>
@@ -149,6 +161,8 @@ export default function QuotesList({ layout, data, params, abilities, display }:
           </Menu>
         </div>
       </div>
+
+      {abilities.create && <InProgress drafts={drafts} />}
 
       {/* Table */}
       <div className="flex-1 overflow-x-auto q-scroll">

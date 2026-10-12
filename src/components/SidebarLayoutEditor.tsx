@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, createElement } from 'react';
 import { 
   X, 
   Plus, 
@@ -87,7 +87,6 @@ interface SortableItemProps {
 
 function SortableItem({ id, label, currentGroupId, allGroups, onRemove, onMove }: SortableItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const Icon = getItemIcon(label);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -111,7 +110,7 @@ function SortableItem({ id, label, currentGroupId, allGroups, onRemove, onMove }
       >
         <GripVertical className="w-4 h-4" />
       </div>
-      <Icon className="w-4 h-4 text-gray-500 group-hover:text-amber-600 shrink-0 transition-colors" />
+      {createElement(getItemIcon(label), { className: 'w-4 h-4 text-gray-500 group-hover:text-amber-600 shrink-0 transition-colors' })}
       <span className="flex-1 text-[13px] font-semibold text-gray-800 truncate">{label}</span>
       
       {/* Quick Move To Dropdown */}

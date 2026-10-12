@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, GripVertical, LayoutTemplate, Loader2, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -14,6 +14,9 @@ import {
 } from '@/lib/tasks/layout-shared';
 
 type Tab = 'form' | 'types' | 'status';
+
+// What a sortable row gets to attach to its own elements (the handle's listeners, the node, the moving style)
+type Dnd = Pick<ReturnType<typeof useSortable>, 'setNodeRef' | 'listeners' | 'attributes'> & { style: CSSProperties };
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'form', label: 'Add Task Form' },
@@ -124,7 +127,7 @@ function DragHandle(props: React.HTMLAttributes<HTMLButtonElement>) {
   );
 }
 
-function SortableItem({ id, children }: { id: string; children: (args: { setNodeRef: any, style: any, listeners: any, attributes: any }) => React.ReactNode }) {
+function SortableItem({ id, children }: { id: string; children: (args: Dnd) => React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -144,7 +147,7 @@ function SortableList<T>({
   items: T[];
   getId: (item: T) => string;
   onReorder: (items: T[]) => void;
-  renderItem: (item: T, index: number, dnd: { setNodeRef: any, style: any, listeners: any, attributes: any }) => React.ReactNode;
+  renderItem: (item: T, index: number, dnd: Dnd) => React.ReactNode;
   className?: string;
 }) {
   const sensors = useSensors(

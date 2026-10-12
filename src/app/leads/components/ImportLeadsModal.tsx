@@ -6,15 +6,15 @@ import {
   Upload,
   FileSpreadsheet,
   CheckCircle2,
-  AlertCircle,
   Loader2,
   Download,
   AlertTriangle,
-  RefreshCw,
   FileCheck,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { useToast } from '@/components/ui/Toast';
+import { IMPORT_FILE_TYPES, readImportFile, sendInBatches } from '@/lib/import/client';
+import { sampleRows } from '@/lib/import/sample';
+import type { ImportRow } from '@/lib/import/sheet';
 
 const SAMPLE_CSV_HEADERS = [
   'Record Id',
@@ -41,56 +41,7 @@ const SAMPLE_CSV_HEADERS = [
   'Last Activity Time',
 ];
 
-const SAMPLE_CSV_ROWS = [
-  [
-    'zcrm_543227000001628165',
-    'LMS / 1',
-    '2026-03-27',
-    'CR BABU',
-    '9941041557',
-    'Lost Lead',
-    '',
-    '',
-    '2026-04-24 00:01:51',
-    '',
-    'Urgent',
-    'VOX PANEL',
-    'Chennai',
-    'zcrm_543227000002493039',
-    'Kiruba 015',
-    'Indiamart MS BL',
-    'Wall Claddings & Decors',
-    'PVC Wall Panels',
-    'Product Supply',
-    '',
-    '',
-    '2026-04-24 00:01:51',
-  ],
-  [
-    'zcrm_543227000001628166',
-    'LMS / 2',
-    '2026-03-27',
-    'Subramanian Subramanian',
-    '9444025830',
-    'Lost Lead',
-    'zcrm_543227000002493055',
-    'Jaya Jothi 010',
-    '2026-07-01 15:26:57',
-    '',
-    'Urgent',
-    'Aluminum Ceiling Panel',
-    'Chennai',
-    'zcrm_543227000002493039',
-    'Kiruba 015',
-    'Indimart (SS) - BL',
-    'Ceiling Design & Ambient Lighting',
-    'Paneling & Cladding Systems',
-    'Product Supply',
-    '',
-    '',
-    '2026-07-01 15:26:57',
-  ],
-];
+const SAMPLE_CSV_ROWS = sampleRows(SAMPLE_CSV_HEADERS, 2);
 
 interface ImportResult {
   total: number;
@@ -113,8 +64,10 @@ export default function ImportLeadsModal({
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [duplicateStrategy, setDuplicateStrategy] = useState<'skip' | 'update' | 'create_new'>('skip');
-  const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
-  const [totalRowsDetected, setTotalRowsDetected] = useState<number>(0);
+  const [rows, setRows] = useState<ImportRow[]>([]);
+  const [progress, setProgress] = useState(0); // rows handled so far
+  const totalRowsDetected = rows.length;
+  const previewRows = rows.slice(0, 3);
   const [detectedColumns, setDetectedColumns] = useState<string[]>([]);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -126,45 +79,35 @@ export default function ImportLeadsModal({
       SAMPLE_CSV_HEADERS.map(h => `"${h}"`).join(','),
       ...SAMPLE_CSV_ROWS.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(',')),
     ];
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + lines.join('\r\n');
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const href = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'leads_import_template.csv');
+    link.href = href;
+    link.download = 'leads_import_template.csv';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(href);
   };
 
   const processFile = async (selectedFile: File) => {
-    const ext = selectedFile.name.toLowerCase();
-    if (!ext.endsWith('.csv') && !ext.endsWith('.xlsx') && !ext.endsWith('.xls')) {
-      toast.error('Please upload a .csv, .xlsx, or .xls file.');
-      return;
-    }
-
     setFile(selectedFile);
     setParsing(true);
     setResult(null);
+    setRows([]);
+    setDetectedColumns([]);
 
     try {
-      const buffer = await selectedFile.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: '', raw: false });
-
-      setTotalRowsDetected(jsonRows.length);
-      if (jsonRows.length > 0) {
-        setDetectedColumns(Object.keys(jsonRows[0]));
-        setPreviewRows(jsonRows.slice(0, 3));
+      const parsed = await readImportFile(selectedFile);
+      setRows(parsed);
+      if (parsed.length > 0) {
+        setDetectedColumns(Object.keys(parsed[0]));
       } else {
-        setDetectedColumns([]);
-        setPreviewRows([]);
         toast.error('The selected file has no data rows.');
       }
     } catch (err) {
       console.error('File parsing error:', err);
-      toast.error('Failed to parse file. Please verify it is a valid CSV or Excel file.');
+      toast.error(err instanceof Error && err.message ? err.message : 'Failed to parse file. Please verify it is a valid CSV or Excel file.');
       setFile(null);
     } finally {
       setParsing(false);
@@ -192,43 +135,29 @@ export default function ImportLeadsModal({
     if (e.target.files && e.target.files.length > 0) {
       processFile(e.target.files[0]);
     }
+    e.target.value = ''; // the same file can be picked again after a change
   };
 
+  // The rows go to the server a few at a time, so a long file never runs into the time limit of one request
   const handleStartImport = async () => {
-    if (!file) {
+    if (rows.length === 0) {
       toast.error('Please select a file to import.');
       return;
     }
 
     setImporting(true);
+    setProgress(0);
+    const { totals, failure } = await sendInBatches<ImportResult['errors'][number]>('/api/leads/import', rows, duplicateStrategy, setProgress);
+    setImporting(false);
+    if (failure) toast.error(failure);
 
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('duplicateStrategy', duplicateStrategy);
-
-      const res = await fetch('/api/leads/import', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Import failed');
-      }
-
-      setResult(data);
-      if (data.imported > 0 || data.updated > 0) {
-        toast.success(`Import complete! ${data.imported} leads added, ${data.updated} updated.`);
-      } else if (data.skipped > 0) {
-        toast.error(`Import complete: ${data.skipped} duplicate leads skipped.`);
-      }
-    } catch (err) {
-      console.error('Import error:', err);
-      toast.error(err instanceof Error ? err.message : 'An error occurred during import.');
-    } finally {
-      setImporting(false);
+    // Nothing at all happened (the first request failed): stay on the file instead of showing an empty report
+    if (failure && totals.imported + totals.updated + totals.skipped + totals.errors.length === 0) return;
+    setResult(totals);
+    if (totals.imported > 0 || totals.updated > 0) {
+      toast.success(`Import complete! ${totals.imported} leads added, ${totals.updated} updated.`);
+    } else if (!failure && totals.skipped > 0) {
+      toast.error(`Import complete: ${totals.skipped} duplicate leads skipped.`);
     }
   };
 
@@ -334,7 +263,7 @@ export default function ImportLeadsModal({
                   >
                     <span className="flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 text-red-600" />
-                      {result.errors.length} rows encountered issues (Click to {showErrorDetails ? 'hide' : 'view'} details)
+                      {result.errors.length} rows were not saved (click to {showErrorDetails ? 'hide' : 'view'} details)
                     </span>
                     <span className="text-red-700 text-[12px]">{showErrorDetails ? 'Hide' : 'Show'}</span>
                   </button>
@@ -361,7 +290,7 @@ export default function ImportLeadsModal({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".csv, .xlsx, .xls"
+                  accept={IMPORT_FILE_TYPES}
                   onChange={handleFileInputChange}
                   className="hidden"
                 />
@@ -556,7 +485,7 @@ export default function ImportLeadsModal({
             {importing && (
               <span className="flex items-center gap-2 text-amber-700 font-medium">
                 <Loader2 className="w-4 h-4 animate-spin text-[#f5b800]" />
-                Importing records into database, please wait...
+                Importing {progress} of {totalRowsDetected} rows, please wait...
               </span>
             )}
           </div>

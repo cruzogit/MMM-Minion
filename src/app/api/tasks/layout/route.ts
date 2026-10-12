@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   });
 }
 
-// PUT /api/tasks/layout — requires tasks.edit: replaces the whole layout (form fields, task types, task statuses)
+// PUT /api/tasks/layout — Super Admin only: replaces the whole layout (form fields, task types, task statuses)
 export async function PUT(request: Request) {
   return withAuthRoute(request, async ctx => NextResponse.json({ layout: await saveTaskLayout(ctx, await readJson(request, body)) }));
 }

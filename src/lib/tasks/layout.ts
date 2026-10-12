@@ -1,7 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { AuthContext } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/effective";
 import { ServiceError } from "@/lib/users/service";
 import { sanitizeTaskLayout, type TaskLayout } from "./layout-shared";
 
@@ -12,12 +11,13 @@ export async function getTaskLayout(): Promise<TaskLayout> {
   return sanitizeTaskLayout(row?.value).layout;
 }
 
-export const canEditTaskLayout = (ctx: AuthContext) => hasPermission(ctx.permissions, "tasks", "edit");
+// Like every other page layout, only a Super Admin changes it: it changes the form, the types and the statuses for everybody
+export const canEditTaskLayout = (ctx: AuthContext) => !!ctx.isSuperAdmin;
 
 // Saves the whole layout the editor sends. A custom type that tasks still use cannot be deleted (hide it instead); a custom
 // status that is renamed carries its tasks along, and one that is deleted moves its tasks back to Not Started.
 export async function saveTaskLayout(ctx: AuthContext, raw: unknown): Promise<TaskLayout> {
-  if (!canEditTaskLayout(ctx)) throw new ServiceError(403, "You do not have permission to change the page layout.");
+  if (!canEditTaskLayout(ctx)) throw new ServiceError(403, "Only a Super Admin can edit the page layout.");
   const { layout, errors } = sanitizeTaskLayout(raw);
   if (errors.length) throw new ServiceError(400, errors[0]);
 

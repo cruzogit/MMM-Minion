@@ -11,8 +11,10 @@ import {
   AlertTriangle,
   FileCheck,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { useToast } from '@/components/ui/Toast';
+import { IMPORT_FILE_TYPES, readImportFile, sendInBatches } from '@/lib/import/client';
+import { sampleRows } from '@/lib/import/sample';
+import type { ImportRow } from '@/lib/import/sheet';
 
 const SAMPLE_CSV_HEADERS = [
   'Record Id',
@@ -91,236 +93,7 @@ const SAMPLE_CSV_HEADERS = [
   'Cust ID',
 ];
 
-const SAMPLE_CSV_ROWS = [
-  [
-    'zcrm_543227000002798018',
-    'zcrm_543227000000281001',
-    'Sivabalan 001',
-    '600000',
-    'VIYANA',
-    '2026-06-03',
-    'zcrm_543227000002798028',
-    'VIYANA',
-    'Negotiation/Review',
-    '90',
-    '540000',
-    'PARE Referral',
-    '',
-    '',
-    'zcrm_543227000000281001',
-    'Sivabalan 001',
-    'zcrm_543227000000281001',
-    'Sivabalan 001',
-    '2026-05-27 17:26:01',
-    '2026-07-31 16:06:55',
-    'INR',
-    '1.000000000',
-    '2026-07-31 16:06:55',
-    '15',
-    '7',
-    '22',
-    '',
-    '',
-    '2026-07-31 16:06:55',
-    'false',
-    '',
-    '2026-05-12 15:31:51',
-    'ACOUSTIC BAFFIES',
-    'Service',
-    'Urgent',
-    'Interior Design',
-    'Office Interior Design',
-    'CHENNAI',
-    'zcrm_543227000002493003',
-    'Sivabalan 001',
-    'zcrm_543227000002493003',
-    'Sivabalan 001',
-    '9444054429',
-    '',
-    '2026-05-12',
-    'sivabalan.minion001@gmail.com',
-    '',
-    '',
-    'false',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    'DL - 1',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-  ],
-  [
-    'zcrm_543227000003187153',
-    'zcrm_543227000000281001',
-    'Sivabalan 001',
-    '1000',
-    'Rohit',
-    '2026-06-26',
-    'zcrm_543227000003187151',
-    'Rohit',
-    'Deal Won',
-    '100',
-    '1000',
-    'Minion',
-    'zcrm_543227000003187152',
-    'Rohit',
-    'zcrm_543227000000281001',
-    'Sivabalan 001',
-    'zcrm_543227000000281001',
-    'Sivabalan 001',
-    '2026-06-13 02:23:02',
-    '2026-09-05 02:38:04',
-    'INR',
-    '1.000000000',
-    '2026-09-05 02:38:04',
-    '35',
-    '13',
-    '48',
-    '',
-    '',
-    '2026-09-05 02:38:04',
-    'false',
-    '',
-    '2026-05-09 17:56:28',
-    'Mineral fiber false ceiling',
-    'Service & AMC',
-    'Urgent',
-    'Ceiling Design & Ambient Lighting',
-    'Gypsum Ceiling',
-    'chennai',
-    'zcrm_543227000002493055',
-    'Jaya Jothi 010',
-    'zcrm_543227000002493055',
-    'Jaya Jothi 010',
-    '9841800346',
-    '2026-05-12',
-    '2026-05-09',
-    '',
-    '',
-    'Service',
-    'false',
-    '',
-    '',
-    '',
-    '',
-    '50K–1L',
-    'LMS/A/315',
-    '',
-    'DL - 4',
-    '',
-    '',
-    '259531000000531004',
-    'https://projects.zoho.in/portal/minionsmarthomesolutions#dashboard/259531000000531004',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-  ],
-  [
-    'zcrm_543227000005847012',
-    'zcrm_543227000000281001',
-    'Sivabalan 001',
-    '48000',
-    'A RATHINAVEL PANDIAN',
-    '2026-09-29',
-    'zcrm_543227000005847010',
-    'A RATHINAVEL PANDIAN',
-    'Requirements Collection',
-    '10',
-    '4800',
-    'Indiamart SS LM',
-    'zcrm_543227000005847011',
-    'A RATHINAVEL PANDIAN',
-    'zcrm_543227000000281001',
-    'Sivabalan 001',
-    'zcrm_543227000000281001',
-    'Sivabalan 001',
-    '2026-09-22 13:22:06',
-    '2026-09-22 13:22:06',
-    'INR',
-    '1.000000000',
-    '2026-09-22 13:22:06',
-    '0',
-    '7',
-    '7',
-    '',
-    '',
-    '2026-09-22 13:22:06',
-    'false',
-    '',
-    '2026-09-22 13:21:37',
-    '3D design',
-    'Product Supply',
-    'Urgent',
-    'Interior Design',
-    'Residential Interior Design',
-    'Chennai',
-    'zcrm_543227000002493063',
-    'Rahul Rikash 011',
-    'zcrm_543227000002493087',
-    'Abishek 014',
-    '+91 99402 62333',
-    '2026-09-22',
-    '2026-09-22',
-    '',
-    '',
-    'Service',
-    'false',
-    '',
-    'Not Sent',
-    '',
-    '',
-    '50K–1L',
-    'LMS/A/1235',
-    '',
-    'DL 101',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    'MIC - 54',
-  ],
-];
+const SAMPLE_CSV_ROWS = sampleRows(SAMPLE_CSV_HEADERS, 2);
 
 interface ImportResult {
   total: number;
@@ -343,8 +116,10 @@ export default function ImportDealsModal({
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [duplicateStrategy, setDuplicateStrategy] = useState<'skip' | 'update' | 'create_new'>('skip');
-  const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
-  const [totalRowsDetected, setTotalRowsDetected] = useState<number>(0);
+  const [rows, setRows] = useState<ImportRow[]>([]);
+  const [progress, setProgress] = useState(0); // rows handled so far
+  const totalRowsDetected = rows.length;
+  const previewRows = rows.slice(0, 3);
   const [detectedColumns, setDetectedColumns] = useState<string[]>([]);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -356,45 +131,35 @@ export default function ImportDealsModal({
       SAMPLE_CSV_HEADERS.map(h => `"${h}"`).join(','),
       ...SAMPLE_CSV_ROWS.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(',')),
     ];
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + lines.join('\r\n');
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const href = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'deals_import_template.csv');
+    link.href = href;
+    link.download = 'deals_import_template.csv';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(href);
   };
 
   const processFile = async (selectedFile: File) => {
-    const ext = selectedFile.name.toLowerCase();
-    if (!ext.endsWith('.csv') && !ext.endsWith('.xlsx') && !ext.endsWith('.xls')) {
-      toast.error('Please upload a .csv, .xlsx, or .xls file.');
-      return;
-    }
-
     setFile(selectedFile);
     setParsing(true);
     setResult(null);
+    setRows([]);
+    setDetectedColumns([]);
 
     try {
-      const buffer = await selectedFile.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: '', raw: false });
-
-      setTotalRowsDetected(jsonRows.length);
-      if (jsonRows.length > 0) {
-        setDetectedColumns(Object.keys(jsonRows[0]));
-        setPreviewRows(jsonRows.slice(0, 3));
+      const parsed = await readImportFile(selectedFile);
+      setRows(parsed);
+      if (parsed.length > 0) {
+        setDetectedColumns(Object.keys(parsed[0]));
       } else {
-        setDetectedColumns([]);
-        setPreviewRows([]);
         toast.error('The selected file has no data rows.');
       }
     } catch (err) {
       console.error('File parsing error:', err);
-      toast.error('Failed to parse file. Please verify it is a valid CSV or Excel file.');
+      toast.error(err instanceof Error && err.message ? err.message : 'Failed to parse file. Please verify it is a valid CSV or Excel file.');
       setFile(null);
     } finally {
       setParsing(false);
@@ -422,43 +187,29 @@ export default function ImportDealsModal({
     if (e.target.files && e.target.files.length > 0) {
       processFile(e.target.files[0]);
     }
+    e.target.value = ''; // the same file can be picked again after a change
   };
 
+  // The rows go to the server a few at a time, so a long file never runs into the time limit of one request
   const handleStartImport = async () => {
-    if (!file) {
+    if (rows.length === 0) {
       toast.error('Please select a file to import.');
       return;
     }
 
     setImporting(true);
+    setProgress(0);
+    const { totals, failure } = await sendInBatches<ImportResult['errors'][number]>('/api/deals/import', rows, duplicateStrategy, setProgress);
+    setImporting(false);
+    if (failure) toast.error(failure);
 
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('duplicateStrategy', duplicateStrategy);
-
-      const res = await fetch('/api/deals/import', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Import failed');
-      }
-
-      setResult(data);
-      if (data.imported > 0 || data.updated > 0) {
-        toast.success(`Import complete! ${data.imported} deals added, ${data.updated} updated.`);
-      } else if (data.skipped > 0) {
-        toast.error(`Import complete: ${data.skipped} duplicate deals skipped.`);
-      }
-    } catch (err) {
-      console.error('Import error:', err);
-      toast.error(err instanceof Error ? err.message : 'An error occurred during import.');
-    } finally {
-      setImporting(false);
+    // Nothing at all happened (the first request failed): stay on the file instead of showing an empty report
+    if (failure && totals.imported + totals.updated + totals.skipped + totals.errors.length === 0) return;
+    setResult(totals);
+    if (totals.imported > 0 || totals.updated > 0) {
+      toast.success(`Import complete! ${totals.imported} deals added, ${totals.updated} updated.`);
+    } else if (!failure && totals.skipped > 0) {
+      toast.error(`Import complete: ${totals.skipped} duplicate deals skipped.`);
     }
   };
 
@@ -564,7 +315,7 @@ export default function ImportDealsModal({
                   >
                     <span className="flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 text-red-600" />
-                      {result.errors.length} rows encountered issues (Click to {showErrorDetails ? 'hide' : 'view'} details)
+                      {result.errors.length} rows were not saved (click to {showErrorDetails ? 'hide' : 'view'} details)
                     </span>
                     <span className="text-red-700 text-[12px]">{showErrorDetails ? 'Hide' : 'Show'}</span>
                   </button>
@@ -591,7 +342,7 @@ export default function ImportDealsModal({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".csv, .xlsx, .xls"
+                  accept={IMPORT_FILE_TYPES}
                   onChange={handleFileInputChange}
                   className="hidden"
                 />
@@ -801,7 +552,7 @@ export default function ImportDealsModal({
             {importing && (
               <span className="flex items-center gap-2 text-amber-700 font-medium">
                 <Loader2 className="w-4 h-4 animate-spin text-[#f5b800]" />
-                Importing records into database, please wait...
+                Importing {progress} of {totalRowsDetected} rows, please wait...
               </span>
             )}
           </div>

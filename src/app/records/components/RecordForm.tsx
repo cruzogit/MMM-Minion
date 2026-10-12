@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowLeft, Loader2, Lock } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Loader2, Lock, ChevronDown, X } from 'lucide-react';
 import { ApiError, callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import { MODULES } from '@/lib/records/registry';
@@ -11,7 +11,8 @@ import { cleanValue, defaultFor } from '@/lib/records/values';
 import type { LayoutField, LookupItem, ModuleId, ModuleLayoutDto, RecordDto, RecordRefs } from '@/lib/records/types';
 import { LayoutButton } from '../layout-editor/LayoutEditor';
 import { api, initialValue, isBlankValue, toFormValue, toPayloadValue, type FormValues } from '../client';
-import FieldInput, { type FieldCtx } from './FieldInput';
+import FieldInput, { type FieldCtx, pickedText } from './FieldInput';
+import { VendorComboModal } from './VendorComboModal';
 import TableSection, { newRow, type RowState } from './TableSection';
 
 type Props = {
@@ -52,6 +53,56 @@ export function TwoColumns<T>({ items, render }: { items: T[]; render: (item: T)
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-4">
       {cols.map((col, i) => <div key={i} className="space-y-4 min-w-0">{col.map(render)}</div>)}
     </div>
+  );
+}
+
+// Pre-Payment asks for the material vendor and the service vendor in one box ("Vendor Name"): one dialog, two tabs
+function PrePaymentVendorCombo({ materialId, serviceId, onChange, ctx, slug, invalid, htmlId }: {
+  materialId: string;
+  serviceId: string;
+  onChange: (materialId: string, serviceId: string, materialLabel: string, serviceLabel: string) => void;
+  ctx: FieldCtx;
+  slug: string;
+  invalid: boolean;
+  htmlId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const mName = materialId ? pickedText({ lookup: 'materialVendor' } as LayoutField, materialId, ctx) || 'Selected Material' : '';
+  const sName = serviceId ? pickedText({ lookup: 'serviceVendor' } as LayoutField, serviceId, ctx) || 'Selected Service' : '';
+  const text = [sName, mName].filter(Boolean).join(' | ');
+
+  return (
+    <>
+      <div
+        id={htmlId}
+        role="button"
+        tabIndex={0}
+        aria-haspopup="dialog"
+        className={`w-full h-[38px] border ${invalid ? 'border-red-300' : 'border-gray-200'} rounded-[4px] px-[12px] bg-white text-[14px] text-[#22263b] flex items-center justify-between cursor-pointer hover:border-[#548df6] focus-within:border-[#548df6] transition-colors`}
+        onClick={() => setOpen(true)}
+        onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(true); } }}
+      >
+        <span className={text ? 'truncate' : 'text-[#9ca0ab] truncate'}>{text || 'Click to select Vendor'}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          {text && (
+            <button type="button" aria-label="Clear vendors" onClick={e => { e.stopPropagation(); onChange('', '', '', ''); }} className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-red-500">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <ChevronDown className="w-4 h-4 text-gray-400" />
+        </div>
+      </div>
+      <VendorComboModal
+        open={open}
+        onClose={() => setOpen(false)}
+        onSave={(sId, mId, sLabel, mLabel) => { onChange(mId, sId, mLabel, sLabel); setOpen(false); }}
+        initialServiceId={serviceId}
+        initialMaterialId={materialId}
+        initialServiceLabel={sName}
+        initialMaterialLabel={mName}
+        slug={slug}
+      />
+    </>
   );
 }
 
@@ -235,7 +286,9 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
                 </section>
               );
             }
-            const fields = formFields.filter(f => f.section === section.id && f.enabled);
+            const rawFields = formFields.filter(f => f.section === section.id && f.enabled);
+            // Pre-Payment shows both vendors in the one "Vendor Name" box (kept in the Material Vendor slot)
+            const fields = def.id === 'prePayment' && rawFields.some(f => f.key === 'materialVendorId') ? rawFields.filter(f => f.key !== 'serviceVendorId') : rawFields;
             if (fields.length === 0) return null;
             return (
               <section key={section.id} aria-labelledby={`sec-${section.id}`}>
@@ -243,11 +296,26 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
                 <TwoColumns
                   items={fields}
                   render={f => (
-                    <FieldRow key={f.key} f={f} htmlId={`f-${f.key}`} error={errors[`values.${f.key}`]}>
+                    <FieldRow key={f.key} f={def.id === 'prePayment' && f.key === 'materialVendorId' ? { ...f, label: 'Vendor Name' } : f} htmlId={`f-${f.key}`} error={errors[`values.${f.key}`]}>
                       {dealLocked(f) ? (
                         <div id={`f-${f.key}`} data-locked-deal className="w-full h-[38px] border border-gray-200 rounded px-3 bg-gray-100 text-[14px] text-gray-700 flex items-center justify-between gap-2">
                           <span className="truncate">{fromProject!.dealLabel}</span><Lock className="w-4 h-4 text-gray-400 shrink-0" aria-label="Locked" />
                         </div>
+                      ) : def.id === 'prePayment' && f.key === 'materialVendorId' ? (
+                        <PrePaymentVendorCombo
+                          materialId={typeof values.materialVendorId === 'string' ? values.materialVendorId : ''}
+                          serviceId={typeof values.serviceVendorId === 'string' ? values.serviceVendorId : ''}
+                          onChange={(mId, sId, mLabel, sLabel) => {
+                            setValue('materialVendorId', mId);
+                            setValue('serviceVendorId', sId);
+                            if (mId && mLabel) ctx.onPick(mId, mLabel);
+                            if (sId && sLabel) ctx.onPick(sId, sLabel);
+                          }}
+                          ctx={ctx}
+                          slug={def.slug}
+                          invalid={!!errors[`values.${f.key}`]}
+                          htmlId={`f-${f.key}`}
+                        />
                       ) : (
                         <FieldInput field={f} value={valueOf(f)} onChange={v => setValue(f.key, v)} error={errors[`values.${f.key}`]} ctx={ctx} htmlId={`f-${f.key}`} />
                       )}

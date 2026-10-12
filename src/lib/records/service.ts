@@ -32,7 +32,7 @@ type Delegate = {
   delete(args: unknown): Promise<Row>;
 };
 const delegate = (db: Db, name: string) => (db as unknown as Record<string, Delegate>)[name];
-const TX = { maxWait: 10_000, timeout: 20_000 };
+export const TX = { maxWait: 10_000, timeout: 20_000 };
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const has = (o: Record<string, unknown>, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 
@@ -434,7 +434,7 @@ async function checkInput(ctx: AuthContext, def: ModuleDef, layout: ModuleLayout
 // ---------------------------------------------------------------------------
 // Create / edit / delete
 // ---------------------------------------------------------------------------
-async function audit(db: Db, ctx: AuthContext, def: ModuleDef, recordId: string, action: string, oldValue?: unknown, newValue?: unknown, dealId?: string | null) {
+export async function audit(db: Db, ctx: AuthContext, def: ModuleDef, recordId: string, action: string, oldValue?: unknown, newValue?: unknown, dealId?: string | null) {
   await db.cRMAuditLog.create({
     data: {
       entityType: def.entityType,

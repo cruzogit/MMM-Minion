@@ -33,11 +33,11 @@ export default function UnauthorizedPage() {
             Go Back
           </button>
           <Link
-            href="/my-work"
+            href="/"
             className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-yellow-500 text-black hover:bg-yellow-400 transition-colors font-medium"
           >
             <Briefcase className="w-4 h-4" />
-            Go to My Work
+            Go to Home
           </Link>
         </div>
       </motion.div>

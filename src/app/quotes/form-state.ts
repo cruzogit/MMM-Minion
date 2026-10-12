@@ -3,6 +3,7 @@
 
 import { calcTotals } from '@/lib/quotes/calc';
 import type { CalcOut, ItemDto, LineDto, LineInput, QuoteDto, QuoteSettings, TaxInfo } from '@/lib/quotes/types';
+import { normName, numText, sellingRate, strictNumber, type VendorRow } from '@/lib/quotes/vendor-quote';
 
 export type LineState = {
   key: string; // stable while the form is open
@@ -21,6 +22,11 @@ export type LineState = {
   taxId: string;
   custom: Record<string, unknown>;
   showDesc: boolean;
+  isHeader?: boolean;
+  // Upload Vendor Quote: the vendor's rate this row's selling rate was worked out from (selling = vendor x (1 + profit % / 100)), and whether the
+  // selling rate was typed by hand afterwards (then a new profit percentage leaves it alone)
+  vendorRate?: string;
+  rateManual?: boolean;
 };
 
 export type CalcState = { discount: string; shipping: string; wKind: 'TDS' | 'TCS'; wTaxId: string; adjLabel: string; adjustment: string };
@@ -29,7 +35,7 @@ let counter = 0;
 export const newKey = () => `l_${Date.now().toString(36)}_${(counter++).toString(36)}`;
 
 // A new row starts with the default tax (taxId) of Quote Settings, if there is one
-export const blankLine = (taxId = ''): LineState => ({ key: newKey(), itemId: null, name: '', description: '', hsn: '', kind: '', taskTemplateId: '', taskTemplateName: '', imageFileId: null, unit: '', quantity: '1', rate: '', taxId, custom: {}, showDesc: false });
+export const blankLine = (taxId = '', isHeader = false): LineState => ({ key: newKey(), itemId: null, name: '', description: '', hsn: '', kind: '', taskTemplateId: '', taskTemplateName: '', imageFileId: null, unit: '', quantity: '1', rate: '', taxId, custom: {}, showDesc: false, isHeader });
 
 // A row that has nothing in it (a Task Template alone does not make it a row: there is no item to do the work for)
 export const isBlankLine = (l: LineState) => !l.name.trim() && !l.description.trim() && !l.itemId && !(Number(l.rate) > 0) && !l.hsn.trim() && Object.keys(l.custom).length === 0;
@@ -71,9 +77,12 @@ export function syncLineWithItem(line: LineState, before: ItemDto, after: ItemDt
 }
 
 export function lineFromDto(l: LineDto): LineState {
+  const { vendorRate, rateManual, ...custom } = l.custom ?? {};
   return {
     key: newKey(), id: l.id, itemId: l.itemId, name: l.name, description: l.description, hsn: l.hsn, kind: l.kind ?? '', taskTemplateId: l.taskTemplateId ?? '', taskTemplateName: l.taskTemplateName,
-    imageFileId: l.imageFileId, unit: l.unit, quantity: String(l.quantity), rate: String(l.rate), taxId: l.taxId ?? '', custom: l.custom ?? {}, showDesc: !!l.description,
+    imageFileId: l.imageFileId, unit: l.unit, quantity: String(l.quantity), rate: String(l.rate), taxId: l.taxId ?? '', custom, showDesc: !!l.description,
+    isHeader: l.custom?.isHeader === true,
+    ...(typeof vendorRate === 'number' ? { vendorRate: numText(vendorRate), ...(rateManual === true ? { rateManual: true } : {}) } : {}),
   };
 }
 
@@ -121,6 +130,96 @@ export function numberOrText(s: string, empty: number): number | string {
 export function lineToInput(l: LineState): LineInput {
   return {
     ...(l.id ? { id: l.id } : {}), itemId: l.itemId, name: l.name, description: l.description, hsn: l.hsn, kind: l.kind || null, taskTemplateId: l.taskTemplateId || null, unit: l.unit,
-    quantity: numberOrText(l.quantity, 1) as number, rate: numberOrText(l.rate, 0) as number, taxId: l.taxId || null, custom: l.custom,
+    quantity: numberOrText(l.quantity, 1) as number, rate: numberOrText(l.rate, 0) as number, taxId: l.taxId || null,
+    custom: {
+      ...(l.isHeader ? { ...l.custom, isHeader: true } : l.custom),
+      ...(l.vendorRate !== undefined && !l.isHeader ? { vendorRate: numberOrText(l.vendorRate, 0), ...(l.rateManual ? { rateManual: true } : {}) } : {}),
+    },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Upload Vendor Quote
+// ---------------------------------------------------------------------------
+const fromVendor = (l: LineState): number | null => (l.vendorRate !== undefined && !l.isHeader ? strictNumber(l.vendorRate) : null);
+
+/**
+ * The profit percentage was set or changed: every row that came from a vendor quote gets vendor rate x (1 + profit % / 100), always worked out from the
+ * vendor's rate (so it never compounds). A row whose selling rate was typed by hand is left as it is; rows typed in the quote have no vendor rate and are not touched.
+ */
+export function applyMarkup(lines: LineState[], profitPercent: number): LineState[] {
+  return lines.map(l => {
+    const base = fromVendor(l);
+    return base === null || l.rateManual ? l : { ...l, rate: numText(sellingRate(base, profitPercent)) };
+  });
+}
+
+/** How many rows keep a selling rate that was typed by hand (the profit percentage does not change them) */
+export const manualRateCount = (lines: LineState[]): number => lines.filter(l => l.rateManual && fromVendor(l) !== null).length;
+
+/** "Use profit percentage" on a row: the hand-typed selling rate is given back to the percentage */
+export function resetRateToMarkup(line: LineState, profitPercent: number): LineState {
+  const base = fromVendor(line);
+  if (base === null) return line;
+  const { rateManual: _manual, ...rest } = line;
+  void _manual;
+  return { ...rest, rate: numText(sellingRate(base, profitPercent)) };
+}
+
+/** A quote row from a reviewed row of the vendor quote: what the Items module holds about the item (tax, HSN/SAC, unit, Task Template) plus what was reviewed (name, description, quantity) */
+export function vendorLine(row: VendorRow, item: ItemDto | null, opts: { defaultTax: string; interState: boolean; profitPercent: number }): LineState {
+  const base = blankLine(opts.defaultTax);
+  const quantity = strictNumber(row.quantity) ?? 1;
+  const vendor = strictNumber(row.rate) ?? 0;
+  const fromItem = item ? lineFromItem(item, base, opts.defaultTax, opts.interState) : { ...base, unit: row.unit.trim() || 'nos' };
+  const description = row.description.trim() || fromItem.description;
+  return {
+    ...fromItem,
+    name: row.name.replace(/\s+/g, ' ').trim(),
+    description,
+    showDesc: !!description,
+    quantity: numText(quantity),
+    vendorRate: numText(vendor),
+    rate: numText(sellingRate(vendor, opts.profitPercent)),
+  };
+}
+
+/**
+ * Puts the rows of a vendor quote into the quote: a row whose name (compared as in the Items module) is on a row that came from a vendor quote
+ * already updates that row (quantity, vendor rate, description, and the selling rate unless it was typed by hand) instead of adding a second one, so
+ * uploading the same file again changes nothing. Rows typed in the quote, headings and other items are never touched. Empty rows at the end are dropped.
+ */
+export function mergeVendorLines(current: LineState[], incoming: LineState[]): { lines: LineState[]; added: number; updated: number } {
+  const lines = current.slice();
+  while (lines.length && isBlankLine(lines[lines.length - 1])) lines.pop();
+  const used = new Set<string>();
+  let added = 0;
+  let updated = 0;
+  for (const inc of incoming) {
+    const at = lines.findIndex(l => !used.has(l.key) && fromVendor(l) !== null && normName(l.name) === normName(inc.name));
+    if (at < 0) {
+      lines.push(inc);
+      used.add(inc.key);
+      added++;
+      continue;
+    }
+    const prev = lines[at];
+    lines[at] = {
+      ...prev,
+      quantity: inc.quantity,
+      vendorRate: inc.vendorRate,
+      rate: prev.rateManual ? prev.rate : inc.rate,
+      description: inc.description || prev.description,
+      showDesc: prev.showDesc || !!inc.description,
+      itemId: prev.itemId ?? inc.itemId,
+      hsn: prev.hsn || inc.hsn,
+      kind: prev.kind || inc.kind,
+      taskTemplateId: prev.taskTemplateId || inc.taskTemplateId,
+      taskTemplateName: prev.taskTemplateName || inc.taskTemplateName,
+      imageFileId: prev.imageFileId ?? inc.imageFileId,
+    };
+    used.add(prev.key);
+    updated++;
+  }
+  return { lines: lines.length ? lines : [blankLine()], added, updated };
 }

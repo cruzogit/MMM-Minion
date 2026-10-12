@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, ChevronDown, GripVertical, ImageIcon, MoreHorizontal, Pencil, Plus, Search, X } from 'lucide-react';
 import { callApi } from '@/lib/leads/client';
 import type { LayoutField } from '@/lib/records/types';
@@ -13,7 +13,7 @@ import { Button, Combo, Menu, MenuItem, MenuRule, Modal, Spinner, inputClass, us
 import ItemOverlay from './ItemOverlay';
 import { itemImageSrc } from './item-client';
 import { defaultTaxId } from '@/lib/quotes/taxes';
-import { blankLine, isBlankLine, lineFromItem, newKey, syncLineWithItem, type LineState } from './form-state';
+import { blankLine, isBlankLine, lineFromItem, newKey, resetRateToMarkup, syncLineWithItem, type LineState } from './form-state';
 
 const PICK_PAGE = 100; // items the picker of a row loads at a time
 const BULK_PAGE = 200; // items Add Items in Bulk loads at a time
@@ -303,29 +303,29 @@ function Thumb({ fileId }: { fileId: string | null }) {
   );
 }
 
-function SwapModal({
+function MoveModal({
   currentIndex,
   onClose,
-  onSwap,
+  onMove,
   max
 }: {
   currentIndex: number;
   onClose: () => void;
-  onSwap: (targetIndex: number) => void;
+  onMove: (targetIndex: number) => void;
   max: number;
 }) {
   const [target, setTarget] = useState('');
   return (
-    <Modal title="Swap With" onClose={onClose} width={400} footer={(
+    <Modal title="Change Placement" onClose={onClose} width={400} footer={(
       <>
         <Button onClick={onClose}>Cancel</Button>
-        <Button kind="blue" disabled={!target || isNaN(parseInt(target, 10)) || parseInt(target, 10) < 1 || parseInt(target, 10) > max || parseInt(target, 10) - 1 === currentIndex} onClick={() => onSwap(parseInt(target, 10) - 1)}>Swap</Button>
+        <Button kind="blue" disabled={!target || isNaN(parseInt(target, 10)) || parseInt(target, 10) < 1 || parseInt(target, 10) > max || parseInt(target, 10) - 1 === currentIndex} onClick={() => onMove(parseInt(target, 10) - 1)}>Move</Button>
       </>
     )}>
       <div className="flex items-center gap-4 py-4">
         <div className="text-[15px] font-medium text-center w-12">{currentIndex + 1}</div>
         <div className="flex-1">
-          <label className="block text-[12px] font-semibold text-gray-500 mb-1">Enter the serial number</label>
+          <label className="block text-[12px] font-semibold text-gray-500 mb-1">Move to (enter serial number)</label>
           <input
             autoFocus
             type="number"
@@ -345,7 +345,7 @@ function SwapModal({
 // ---------------------------------------------------------------------------
 // The Item Table of the quote form
 // ---------------------------------------------------------------------------
-export default function LineItems({ title, lines, setLines, columns, settings, amounts, errors, ctx, canAddItem, canEditItem = false, interState = false, aside, below }: {
+export default function LineItems({ title, lines, setLines, columns, settings, amounts, errors, ctx, canAddItem, canEditItem = false, interState = false, markupPct = 0, aside, below }: {
   title: string;
   aside?: React.ReactNode; // beside the Add buttons (the calculation panel)
   below?: React.ReactNode; // at the bottom of the column of the Add buttons (the customer notes)
@@ -359,43 +359,102 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
   canAddItem: boolean; // may add an item to the Item Master (New Item)
   canEditItem?: boolean; // may change an item of the Item Master (Edit item)
   interState?: boolean; // the quote is for another state: a picked item gives its Inter State Tax Rate
+  markupPct?: number; // the Profit Percentage of the quote: the rows that came from a vendor quote are priced with it
 }) {
   const [bulk, setBulk] = useState(false);
   const [itemWindow, setItemWindow] = useState<{ key: string; itemId: string | null; name: string } | null>(null);
-  const [swapWindow, setSwapWindow] = useState<{ index: number } | null>(null);
+  const [moveWindow, setMoveWindow] = useState<{ index: number } | null>(null);
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [armed, setArmed] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
+  const [bulkTaxConfirm, setBulkTaxConfirm] = useState<string | null>(null);
   const display = settings.display;
   const defaultTax = defaultTaxId(settings.taxes); // what a new row starts with
 
   const col = (key: string) => columns.find(c => c.key === key);
   const custom = columns.filter(c => !c.isSystem);
   const tpl = col('taskTemplateId'); const hsn = col('hsn'); const unit = col('unit'); const qty = col('quantity'); const rate = col('rate'); const tax = col('taxId'); const amount = col('lineAmount');
-  const colCount = 2 + (tpl ? 1 : 0) + (hsn ? 1 : 0) + (unit ? 1 : 0) + (qty ? 1 : 0) + (rate ? 1 : 0) + (tax ? 1 : 0) + custom.length + (amount ? 1 : 0);
+  const colCount = 2 + (tpl ? 1 : 0) + (hsn ? 1 : 0) + (unit ? 1 : 0) + (qty ? 1 : 0) + (rate ? 1 : 0) + (tax ? 1 : 0) + custom.length + (amount ? 1 : 0) + 1;
+
+  const serialNumbers = useMemo(() => {
+    let no = 0;
+    return lines.map(l => l.isHeader ? null : ++no);
+  }, [lines]);
+
+  const history = useRef<LineState[][]>([]);
+  // Called from inside state updaters, which React may run twice with the same list in development: the same list is kept once
+  const pushHistory = (cur: LineState[]) => {
+    const h = history.current;
+    if (h[h.length - 1] === cur) return;
+    h.push(cur);
+    if (h.length > 30) h.shift();
+  };
+
+  useEffect(() => {
+    const handleUndo = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        const target = e.target as HTMLElement | null;
+        // typing keeps its own undo; a dialog on top owns the keyboard
+        if (e.defaultPrevented || target?.isContentEditable || (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) || target?.closest('[role="dialog"]')) return;
+        const prev = history.current.pop();
+        if (prev) {
+          e.preventDefault();
+          setLines(() => prev);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleUndo);
+    return () => window.removeEventListener('keydown', handleUndo);
+  }, [setLines]);
 
   const patch = (key: string, p: Partial<LineState>) => setLines(cur => cur.map(l => (l.key === key ? { ...l, ...p } : l)));
-  const remove = (key: string) => setLines(cur => { const next = cur.filter(l => l.key !== key); return next.length ? next : [blankLine(defaultTax)]; });
-  const insert = (index: number, line: LineState = blankLine(defaultTax)) => setLines(cur => [...cur.slice(0, index), line, ...cur.slice(index)]);
-  const swap = (indexA: number, indexB: number) => setLines(cur => {
-    if (indexA < 0 || indexB < 0 || indexA >= cur.length || indexB >= cur.length || indexA === indexB) return cur;
+  const remove = (key: string) => setLines(cur => { pushHistory(cur); const next = cur.filter(l => l.key !== key); return next.length ? next : [blankLine(defaultTax)]; });
+  const insert = (index: number, line: LineState = blankLine(defaultTax)) => setLines(cur => { pushHistory(cur); return [...cur.slice(0, index), line, ...cur.slice(index)]; });
+  const moveRow = (fromIndex: number, toIndex: number) => setLines(cur => {
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= cur.length || toIndex >= cur.length || fromIndex === toIndex) return cur;
+    pushHistory(cur);
     const next = cur.slice();
-    const temp = next[indexA];
-    next[indexA] = next[indexB];
-    next[indexB] = temp;
+    const [item] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, item);
     return next;
   });
   const move = (from: string, to: string) => setLines(cur => {
     const a = cur.findIndex(l => l.key === from); const b = cur.findIndex(l => l.key === to);
     if (a < 0 || b < 0 || a === b) return cur;
+    pushHistory(cur);
     const next = cur.slice(); const [item] = next.splice(a, 1); next.splice(b, 0, item);
     return next;
   });
   const clone = (l: LineState, index: number) => insert(index + 1, { ...l, key: newKey(), id: undefined });
   const addMany = (items: ItemDto[]) => setLines(cur => {
+    pushHistory(cur);
     const keep = cur.length && isBlankLine(cur[cur.length - 1]) ? cur.slice(0, -1) : cur;
     return [...keep, ...items.map(i => lineFromItem(i, undefined, defaultTax, interState))];
   });
+  // The three dots of an item row: the same menu stands next to the clear (x) of the item and at the end of the row
+  const itemRowMenu = (l: LineState, i: number) => (
+    <Menu align="right" width={190} trigger={({ toggle }) => (
+      <button type="button" onClick={toggle} aria-label="Row options" aria-haspopup="menu" className="w-[22px] h-[22px] rounded-full border border-[#c9cbd6] bg-white flex items-center justify-center text-[#7f8497] hover:bg-[#f1f1fa]"><MoreHorizontal className="w-3.5 h-3.5" /></button>
+    )}>
+      {close => (
+        <>
+          {l.itemId && canEditItem && <MenuItem onClick={() => { close(); setItemWindow({ key: l.key, itemId: l.itemId, name: l.name }); }}>Edit item</MenuItem>}
+          {(l.showDesc ?? !!l.description) ? (
+            <MenuItem onClick={() => { close(); patch(l.key, { showDesc: false }); }}>Hide description</MenuItem>
+          ) : (
+            <MenuItem onClick={() => { close(); patch(l.key, { showDesc: true }); }}>{l.description ? 'Show description' : 'Add description'}</MenuItem>
+          )}
+          <MenuItem onClick={() => { close(); clone(l, i); }}>Clone</MenuItem>
+          <MenuItem onClick={() => { close(); insert(i, blankLine(defaultTax, true)); }}>Insert new header</MenuItem>
+          <MenuItem onClick={() => { close(); insert(i); }}>Insert new row above</MenuItem>
+          <MenuItem onClick={() => { close(); insert(i + 1); }}>Insert new row below</MenuItem>
+          <MenuItem onClick={() => { close(); setMoveWindow({ index: i }); }}>Change placement</MenuItem>
+          {l.rateManual && l.vendorRate !== undefined && <MenuItem onClick={() => { close(); setLines(cur => cur.map(x => (x.key === l.key ? resetRateToMarkup(x, markupPct) : x))); }}>Use profit percentage</MenuItem>}
+        </>
+      )}
+    </Menu>
+  );
+
   const taxOptions = (current: string) => settings.taxes.filter(t => t.active || t.id === current);
   const headerCls = 'text-left px-[6px] lg:px-[10px] h-[44px] text-[10px] lg:text-[11px] font-semibold uppercase tracking-[0.2px] lg:tracking-[0.4px] text-[#6d7189]';
   const descRows = (text: string) => Math.min(14, Math.max(3, text.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 74)), 0)));
@@ -405,8 +464,8 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
 
   return (
     <div className="w-full min-w-0">
-      <div className="mr-[10px] ml-[28px] lg:mr-[125px] lg:ml-[20px] overflow-auto max-h-[60vh] lg:max-h-[65vh]">
-        <div className="inline-block min-w-full align-middle">
+      <div className="mr-[10px] ml-[28px] lg:mr-[125px] lg:ml-[20px] overflow-x-auto">
+        <div className="inline-block min-w-full align-middle pr-[70px]">
           <div className="border border-[#ebeaf2] rounded-[6px]">
           <div className="sticky top-0 z-20 h-[47px] px-[15px] flex items-center justify-between bg-[#f9f9fb] border-b border-[#ebeaf2] rounded-t-[6px]">
             <h2 className="text-[14px] font-semibold text-black">{title}</h2>
@@ -416,9 +475,9 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
               {close => (
                 <>
                   <MenuItem onClick={() => { close(); setBulk(true); }}>Add Items in Bulk</MenuItem>
-                  <MenuItem onClick={() => { close(); setLines(cur => cur.filter(l => !isBlankLine(l)).length ? cur.filter(l => !isBlankLine(l)) : [blankLine(defaultTax)]); }}>Remove empty rows</MenuItem>
+                  <MenuItem onClick={() => { close(); setLines(cur => { pushHistory(cur); const next = cur.filter(l => !isBlankLine(l)); return next.length ? next : [blankLine(defaultTax)]; }); }}>Remove empty rows</MenuItem>
                   <MenuRule />
-                  <MenuItem danger onClick={() => { close(); setLines(() => [blankLine(defaultTax)]); }}>Clear all rows</MenuItem>
+                  <MenuItem danger onClick={() => { close(); setLines(cur => { pushHistory(cur); return [blankLine(defaultTax)]; }); }}>Clear all rows</MenuItem>
                 </>
               )}
             </Menu>
@@ -444,7 +503,7 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                         onChange={e => {
                           const newTaxId = e.target.value;
                           if (newTaxId) {
-                            setLines(cur => cur.map(l => isBlankLine(l) ? l : { ...l, taxId: newTaxId }));
+                            setBulkTaxConfirm(newTaxId);
                           }
                         }}
                       >
@@ -458,13 +517,13 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                   </th>
                 )}
                 {amount && <th className={`${headerCls} w-[10%] min-w-[70px] text-right border-l border-[#ebeaf2]`}>{amount.label}</th>}
+                <th className="w-0 p-0 border-none"></th>
               </tr>
             </thead>
             <tbody>
               {lines.map((l, i) => {
                 const err = (k: string) => errors[`lines.${i}.${k}`];
                 const rowErr = errors[`lines.${i}`];
-                const filled = !isBlankLine(l);
                 return (
                   <tr
                     key={l.key}
@@ -476,10 +535,45 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                     onDragEnd={() => { setDragKey(null); setOverKey(null); setArmed(null); }}
                     className={`group align-top border-b border-[#ebeaf2] last:border-b-0 ${overKey === l.key && dragKey !== l.key ? 'bg-[#f1f1fa]' : ''} ${dragKey === l.key ? 'opacity-50' : ''}`}
                   >
-                    <td className="relative px-[10px] py-[14px] text-center text-[12.5px] font-medium text-[#7f8497] select-none">
-                      <button type="button" aria-label="Drag to move this row" onMouseDown={() => setArmed(l.key)} onMouseUp={() => setArmed(null)} className="absolute -left-[22px] top-[14px] w-[16px] h-[22px] flex items-center justify-center text-[#c9cbd6] hover:text-[#6d7189] cursor-grab"><GripVertical className="w-4 h-4" /></button>
-                      {i + 1}
-                    </td>
+                    {l.isHeader ? (
+                      <>
+                        <td colSpan={colCount - 1} className="relative px-[10px] py-[10px]">
+                           <div className="absolute left-[0px] top-[14px] flex items-center justify-center">
+                             <button type="button" aria-label="Drag to move this row" onMouseDown={() => setArmed(l.key)} onMouseUp={() => setArmed(null)} className="w-[16px] h-[22px] flex items-center justify-center text-[#c9cbd6] hover:text-[#6d7189] cursor-grab"><GripVertical className="w-4 h-4" /></button>
+                           </div>
+                           <div className="pl-[14px]">
+                             <input
+                               value={l.name}
+                               onChange={e => patch(l.key, { name: e.target.value })}
+                               className="w-full h-[36px] px-[12px] bg-white border border-[#d7d5e1] hover:border-[#548df6] focus:border-[#548df6] focus:outline-none rounded-[6px] text-[14px] font-semibold text-black placeholder:font-normal placeholder:text-[#9ca0ab]"
+                               placeholder="Add New Header"
+                             />
+                           </div>
+                        </td>
+                        <td className="p-0 w-0 relative align-top">
+                          <div className="absolute top-[14px] left-[10px] flex items-center gap-[8px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 z-10">
+                            <Menu align="right" width={190} trigger={({ toggle }) => (
+                              <button type="button" onClick={toggle} aria-label="Row options" aria-haspopup="menu" className="w-[22px] h-[22px] rounded-full border border-[#c9cbd6] bg-white flex items-center justify-center text-[#7f8497] hover:bg-[#f1f1fa]"><MoreHorizontal className="w-3.5 h-3.5" /></button>
+                            )}>
+                              {close => (
+                                <>
+                                  <MenuItem onClick={() => { close(); insert(i, blankLine(defaultTax, true)); }}>Insert new header</MenuItem>
+                                  <MenuItem onClick={() => { close(); insert(i); }}>Insert new row above</MenuItem>
+                                  <MenuItem onClick={() => { close(); insert(i + 1); }}>Insert new row below</MenuItem>
+                                  <MenuItem onClick={() => { close(); setMoveWindow({ index: i }); }}>Change placement</MenuItem>
+                                </>
+                              )}
+                            </Menu>
+                            <button type="button" onClick={() => remove(l.key)} aria-label="Remove this row" className="w-[22px] h-[22px] rounded-full border border-[#c9cbd6] bg-white flex items-center justify-center text-[#7f8497] hover:text-[#e5484d] hover:border-[#f3c2c4] hover:bg-[#fdeeee]"><X className="w-3.5 h-3.5" /></button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="relative px-[10px] py-[14px] text-center text-[12.5px] font-medium text-[#7f8497] select-none">
+                          <button type="button" aria-label="Drag to move this row" onMouseDown={() => setArmed(l.key)} onMouseUp={() => setArmed(null)} className="absolute -left-[22px] top-[14px] w-[16px] h-[22px] flex items-center justify-center text-[#c9cbd6] hover:text-[#6d7189] cursor-grab"><GripVertical className="w-4 h-4" /></button>
+                          {serialNumbers[i]}
+                        </td>
                     <td className="relative pl-[14px] pr-[10px] py-[11px]">
                       <div className="flex items-start gap-[12px] lg:gap-[18px]">
                         <div className="mt-[4px]"><Thumb fileId={l.imageFileId} /></div>
@@ -493,38 +587,21 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                               display={display}
                               canAdd={canAddItem}
                               onType={text => patch(l.key, { name: text, itemId: null, imageFileId: null })}
-                              onPick={item => patch(l.key, { ...lineFromItem(item, l, defaultTax, interState), quantity: l.quantity || '1' })}
+                              onPick={item => patch(l.key, { ...lineFromItem(item, l, defaultTax, interState), quantity: l.quantity || '1', vendorRate: undefined, rateManual: undefined })}
                               onAddNew={name => setItemWindow({ key: l.key, itemId: null, name })}
                             />
                           </div>
                           {(l.showDesc ?? !!l.description) && (
-                            <textarea value={l.description} onChange={e => patch(l.key, { description: e.target.value })} rows={descRows(l.description)} maxLength={2000} aria-label="Item description" placeholder="Add a description to your item"
+                            <textarea id={`line-${i}-description`} value={l.description} onChange={e => patch(l.key, { description: e.target.value })} rows={descRows(l.description)} maxLength={2000} aria-label="Item description" placeholder="Add a description to your item"
                               className={`${inputClass(!!err('description'))} !h-auto mt-[6px] !px-[14px] py-[10px] !text-[14px] leading-[24px] resize-y !rounded-[6px] ${err('description') ? '' : '!border-transparent !bg-[#f7f7f9] focus:!bg-white focus:!border-[#548df6]'}`} />
                           )}
                           <TaxCodeLine key={l.key} name={l.name} kind={l.kind || 'Service'} code={l.hsn} onChange={code => patch(l.key, { hsn: code })} allowToggle={true} onKindToggle={() => patch(l.key, { kind: (l.kind || 'Service') === 'Service' ? 'Goods' : 'Service' })} onChangeKind={k => patch(l.key, { kind: k })} />
                           {(err('name') || rowErr) && <p role="alert" className="mt-1 text-[12px] text-[#d9232b]">{err('name') ?? rowErr}</p>}
                         </div>
                       </div>
-                      <div className={`absolute right-[10px] top-[14px] flex items-center gap-[8px] ${filled ? '' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
-                        <Menu align="right" width={190} trigger={({ toggle }) => (
-                          <button type="button" onClick={toggle} aria-label="Row options" aria-haspopup="menu" className="w-[22px] h-[22px] rounded-full border border-[#c9cbd6] bg-white flex items-center justify-center text-[#7f8497] hover:bg-[#f1f1fa]"><MoreHorizontal className="w-3.5 h-3.5" /></button>
-                        )}>
-                          {close => (
-                            <>
-                              {l.itemId && canEditItem && <MenuItem onClick={() => { close(); setItemWindow({ key: l.key, itemId: l.itemId, name: l.name }); }}>Edit item</MenuItem>}
-                              {(l.showDesc ?? !!l.description) ? (
-                                <MenuItem onClick={() => { close(); patch(l.key, { showDesc: false }); }}>Hide description</MenuItem>
-                              ) : (
-                                <MenuItem onClick={() => { close(); patch(l.key, { showDesc: true }); }}>{l.description ? 'Show description' : 'Add description'}</MenuItem>
-                              )}
-                              <MenuItem onClick={() => { close(); clone(l, i); }}>Clone</MenuItem>
-                              <MenuItem onClick={() => { close(); insert(i); }}>Insert new row above</MenuItem>
-                              <MenuItem onClick={() => { close(); insert(i + 1); }}>Insert new row below</MenuItem>
-                              <MenuItem onClick={() => { close(); setSwapWindow({ index: i }); }}>Swap</MenuItem>
-                            </>
-                          )}
-                        </Menu>
-                        <button type="button" onClick={() => remove(l.key)} aria-label="Remove this row" className="w-[22px] h-[22px] rounded-full border border-[#c9cbd6] bg-white flex items-center justify-center text-[#7f8497] hover:text-[#e5484d] hover:border-[#f3c2c4] hover:bg-[#fdeeee]"><X className="w-3.5 h-3.5" /></button>
+                      <div className="absolute right-[10px] top-[14px] flex items-center gap-[8px] opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                        {itemRowMenu(l, i)}
+                        <button type="button" onClick={() => patch(l.key, { name: '', description: '', itemId: null, imageFileId: null, rate: '', vendorRate: undefined, rateManual: undefined })} aria-label="Clear item details" className="w-[22px] h-[22px] rounded-full border border-[#c9cbd6] bg-white flex items-center justify-center text-[#7f8497] hover:text-[#e5484d] hover:border-[#f3c2c4] hover:bg-[#fdeeee]"><X className="w-3.5 h-3.5" /></button>
                       </div>
                     </td>
                     {tpl && (
@@ -545,8 +622,8 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                         {err('taskTemplateId') && <p role="alert" className="mt-1 text-[12px] text-[#d9232b]">{err('taskTemplateId')}</p>}
                       </td>
                     )}
-                    {hsn && <td className="px-[4px] py-[8px]"><input value={l.hsn} onChange={e => patch(l.key, { hsn: digitsOnly(e.target.value) })} inputMode="numeric" autoComplete="off" aria-label="HSN/SAC" className={`${cell} ${err('hsn') ? '!border-[#e5484d]' : ''}`} /></td>}
-                    {unit && <td className="px-[4px] py-[8px]"><input value={l.unit} onChange={e => patch(l.key, { unit: e.target.value })} maxLength={20} aria-label="Unit" className={`${cell} ${err('unit') ? '!border-[#e5484d]' : ''}`} /></td>}
+                    {hsn && <td className="px-[4px] py-[8px]"><input id={`line-${i}-hsn`} value={l.hsn} onChange={e => patch(l.key, { hsn: digitsOnly(e.target.value) })} inputMode="numeric" autoComplete="off" aria-label="HSN/SAC" className={`${cell} ${err('hsn') ? '!border-[#e5484d]' : ''}`} /></td>}
+                    {unit && <td className="px-[4px] py-[8px]"><input id={`line-${i}-unit`} value={l.unit} onChange={e => patch(l.key, { unit: e.target.value })} maxLength={20} aria-label="Unit" className={`${cell} ${err('unit') ? '!border-[#e5484d]' : ''}`} /></td>}
                     {custom.map(c => (
                       <td key={c.key} className="px-[4px] py-[8px]">
                         <QField f={c} compact id={`line-${i}-${c.key}`} value={l.custom[c.key] ?? (c.type === 'FILE' ? [] : '')} onChange={v => patch(l.key, { custom: { ...l.custom, [c.key]: v } })} error={errors[`lines.${i}.custom.${c.key}`]} ctx={ctx} />
@@ -554,7 +631,7 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                     ))}
                     {qty && (
                       <td className="px-[4px] py-[8px] border-l border-[#ebeaf2]">
-                        <input value={l.quantity} onChange={e => patch(l.key, { quantity: e.target.value })} inputMode="decimal" aria-label="Quantity" aria-invalid={!!err('quantity') || undefined} className={`${cell} text-right text-[#222529] ${err('quantity') ? '!border-[#e5484d]' : ''}`} />
+                        <input id={`line-${i}-quantity`} value={l.quantity} onChange={e => patch(l.key, { quantity: e.target.value })} inputMode="decimal" aria-label="Quantity" aria-invalid={!!err('quantity') || undefined} className={`${cell} text-right text-[#222529] ${err('quantity') ? '!border-[#e5484d]' : ''}`} />
                         {!unit && !isBlankLine(l) && (
                           <div className="px-[2px] pt-[1px] flex justify-end">
                             <div className="relative inline-block group/unit">
@@ -565,7 +642,7 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                                 title="Change Unit"
                               >
                                 <option value="">Select unit</option>
-                                {Array.from(new Set(['nos', 'sqft', 'sqmt', 'rft', 'kg', 'g', 'ltr', 'm', 'cm', 'mm', 'hours', 'days', 'months', 'pkt', 'box', 'set', 'roll', l.unit].filter(Boolean))).map(u => (
+                                {Array.from(new Set(['nos', 'sqft', 'sqmt', 'rft', 'kg', 'g', 'ltr', 'm', 'cm', 'mm', 'hours', 'days', 'months', 'pkt', 'box', 'set', 'roll', 'lumpsum', l.unit].filter(Boolean))).map(u => (
                                   <option key={u} value={u}>{u}</option>
                                 ))}
                               </select>
@@ -578,15 +655,20 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                     )}
                     {rate && (
                       <td className="px-[4px] py-[8px] border-l border-[#ebeaf2]">
-                        <input value={l.rate} onChange={e => patch(l.key, { rate: e.target.value })} inputMode="decimal" placeholder="0.00" aria-label="Rate" aria-invalid={!!err('rate') || undefined} className={`${cell} text-right ${err('rate') ? '!border-[#e5484d]' : ''}`} />
-                        {!unit && l.unit && <div className="px-[8px] pt-[3px] text-right text-[12px] leading-[18px] text-[#6d7189]" data-line-per>per {l.unit}</div>}
+                        <input id={`line-${i}-rate`} value={l.rate} onChange={e => patch(l.key, { rate: e.target.value, ...(l.vendorRate !== undefined ? { rateManual: true } : {}) })} inputMode="decimal" placeholder="0.00" aria-label="Rate" aria-invalid={!!err('rate') || undefined} className={`${cell} text-right ${err('rate') ? '!border-[#e5484d]' : ''}`} />
+                        {!unit && l.unit && l.unit.toLowerCase() !== 'lumpsum' && <div className="px-[8px] pt-[3px] text-right text-[12px] leading-[18px] text-[#6d7189]" data-line-per>per {l.unit}</div>}
+                        {l.vendorRate !== undefined && (
+                          <div className="px-[8px] pt-[3px] text-right text-[11px] leading-[16px] text-[#6d7189]" data-line-vendor title={l.rateManual ? 'The selling rate was typed here, so a new Profit Percentage does not change it. Use "Use profit percentage" in the row menu to give it back.' : 'Selling rate = vendor rate × (1 + Profit Percentage ÷ 100)'}>
+                            Vendor {formatAmount(Number(l.vendorRate) || 0, display.grouping)} · {l.rateManual ? 'typed by hand' : `+${markupPct}%`}
+                          </div>
+                        )}
                         {err('rate') && <p role="alert" className="text-[12px] text-[#d9232b] text-right">{err('rate')}</p>}
                       </td>
                     )}
                     {tax && (
                       <td className="px-[4px] py-[8px] border-l border-[#ebeaf2]">
                         <div className="relative">
-                          <select value={l.taxId} onChange={e => patch(l.key, { taxId: e.target.value })} aria-label="Tax" className={`w-full h-[34px] pl-[8px] pr-7 lg:pl-[10px] lg:pr-8 text-[12px] lg:text-[13px] rounded-[4px] border appearance-none bg-[#f9f9fb] focus:outline-none focus:border-[#548df6] ${err('taxId') ? 'border-[#e5484d]' : 'border-transparent hover:border-[#d7d5e1]'} ${l.taxId ? 'text-[#22263b]' : 'text-[#9ca0ab]'}`}>
+                          <select id={`line-${i}-taxId`} value={l.taxId} onChange={e => patch(l.key, { taxId: e.target.value })} aria-label="Tax" className={`w-full h-[34px] pl-[8px] pr-7 lg:pl-[10px] lg:pr-8 text-[12px] lg:text-[13px] rounded-[4px] border appearance-none bg-[#f9f9fb] focus:outline-none focus:border-[#548df6] ${err('taxId') ? 'border-[#e5484d]' : 'border-transparent hover:border-[#d7d5e1]'} ${l.taxId ? 'text-[#22263b]' : 'text-[#9ca0ab]'}`}>
                             <option value="">Select a Tax</option>
                             {taxOptions(l.taxId).map(t => <option key={t.id} value={t.id}>{t.name} [{t.rate}%]</option>)}
                           </select>
@@ -595,6 +677,14 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                       </td>
                     )}
                     {amount && <td className="relative px-[6px] lg:px-[10px] py-[10px] border-l border-[#ebeaf2] text-right text-[13px] font-semibold text-black pt-[18px]" data-line-amount>{formatAmount(amounts[i] ?? 0, display.grouping)}</td>}
+                    <td className="p-0 w-0 relative align-top">
+                      <div className="absolute top-[14px] left-[10px] flex items-center gap-[8px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 z-10">
+                        {itemRowMenu(l, i)}
+                        <button type="button" onClick={() => remove(l.key)} aria-label="Remove this row" className="w-[22px] h-[22px] rounded-full border border-[#c9cbd6] bg-white flex items-center justify-center text-[#7f8497] hover:text-[#e5484d] hover:border-[#f3c2c4] hover:bg-[#fdeeee]"><X className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </td>
+                  </>
+                  )}
                   </tr>
                 );
               })}
@@ -624,12 +714,27 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
       </div>
 
       {bulk && <BulkModal display={display} onClose={() => setBulk(false)} onAdd={items => { addMany(items); setBulk(false); }} />}
-      {swapWindow && (
-        <SwapModal
-          currentIndex={swapWindow.index}
+      {bulkTaxConfirm && (
+        <Modal title="Change Tax for All Items" onClose={() => setBulkTaxConfirm(null)} width={400} footer={(
+          <>
+            <Button onClick={() => setBulkTaxConfirm(null)}>Cancel</Button>
+            <Button kind="blue" onClick={() => {
+              setLines(cur => cur.map(l => isBlankLine(l) ? l : { ...l, taxId: bulkTaxConfirm }));
+              setBulkTaxConfirm(null);
+            }}>Yes, change it</Button>
+          </>
+        )}>
+          <div className="py-4 text-[14px] text-[#22263b]">
+            Do you want to apply this tax change to all items in the table?
+          </div>
+        </Modal>
+      )}
+      {moveWindow && (
+        <MoveModal
+          currentIndex={moveWindow.index}
           max={lines.length}
-          onClose={() => setSwapWindow(null)}
-          onSwap={targetIndex => { swap(swapWindow.index, targetIndex); setSwapWindow(null); }}
+          onClose={() => setMoveWindow(null)}
+          onMove={targetIndex => { moveRow(moveWindow.index, targetIndex); setMoveWindow(null); }}
         />
       )}
       {itemWindow && (

@@ -5,6 +5,12 @@ import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
+// Our own messages ("No employee found for author") are shown as they are; a database error names tables and files, so it is not
+function messageOf(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message && !error.name.startsWith("PrismaClient") && !/prisma|invocation/i.test(error.message)) return error.message;
+  return fallback;
+}
+
 export async function createTask(formData: FormData) {
   const auth = await authorizeAction("tasks", "create");
   if (!auth.ok) return { success: false, error: auth.error };
@@ -103,9 +109,9 @@ export async function createTask(formData: FormData) {
     revalidatePath("/my-work");
 
     return { success: true, taskId: task.id };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to create task:", error);
-    return { success: false, error: error.message || "Failed to create task" };
+    return { success: false, error: messageOf(error, "Failed to create task") };
   }
 }
 
@@ -132,9 +138,9 @@ export async function updateTaskStatus(taskId: string, status: string) {
     if (task.projectId) revalidatePath(`/projects/${task.projectId}`);
 
     return { success: true, task };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to update task status:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: messageOf(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -149,9 +155,9 @@ export async function updateTaskPriority(taskId: string, priority: string) {
 
     revalidatePath("/tasks");
     return { success: true, task };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to update task priority:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: messageOf(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -173,9 +179,9 @@ export async function assignTask(taskId: string, assigneeId: string) {
     revalidatePath("/tasks");
     revalidatePath("/my-work");
     return { success: true, task };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to assign task:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: messageOf(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -183,10 +189,8 @@ export async function bulkAssignTasks(taskIds: string[], assigneeId: string) {
   const auth = await authorizeAction("tasks", "edit");
   if (!auth.ok) return { success: false, error: auth.error };
   try {
-    let validAssignee = await prisma.employee.findUnique({ where: { id: assigneeId } });
-    if (!validAssignee) {
-      validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
-    }
+    // An assignee that does not exist is an error: the tasks must not quietly end up with whoever pressed the button
+    const validAssignee = await prisma.employee.findUnique({ where: { id: assigneeId } });
     if (!validAssignee) {
       return { success: false, error: "No employee found for assignment." };
     }
@@ -202,9 +206,9 @@ export async function bulkAssignTasks(taskIds: string[], assigneeId: string) {
     revalidatePath("/tasks");
     revalidatePath("/my-work");
     return { success: true, count: taskIds.length };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to bulk assign tasks:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: messageOf(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -214,7 +218,7 @@ export async function addTaskComment(taskId: string, content: string, authorId?:
   try {
     let resolvedAuthorId = authorId;
     if (!resolvedAuthorId) {
-      let validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
+      const validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (validAssignee) resolvedAuthorId = validAssignee.id;
       else throw new Error("No employee found for author");
     }
@@ -239,9 +243,9 @@ export async function addTaskComment(taskId: string, content: string, authorId?:
 
     revalidatePath("/tasks");
     return { success: true, comment };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to add comment:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: messageOf(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -258,7 +262,7 @@ export async function addChecklistItem(taskId: string, content: string, employee
 
     let resolvedEmpId = employeeId;
     if (!resolvedEmpId) {
-      let validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
+      const validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (validAssignee) resolvedEmpId = validAssignee.id;
     }
 
@@ -275,9 +279,9 @@ export async function addChecklistItem(taskId: string, content: string, employee
 
     revalidatePath("/tasks");
     return { success: true, item };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to add checklist item:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: messageOf(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -292,7 +296,7 @@ export async function toggleChecklistItem(itemId: string, taskId: string, isComp
 
     let resolvedEmpId = employeeId;
     if (!resolvedEmpId) {
-      let validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
+      const validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (validAssignee) resolvedEmpId = validAssignee.id;
     }
 
@@ -309,9 +313,9 @@ export async function toggleChecklistItem(itemId: string, taskId: string, isComp
 
     revalidatePath("/tasks");
     return { success: true, item };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to toggle checklist item:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: messageOf(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -333,9 +337,9 @@ export async function deleteTask(taskId: string) {
     revalidatePath("/my-work");
     if (task.projectId) revalidatePath(`/projects/${task.projectId}`);
     return { success: true };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to delete task:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: messageOf(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -380,7 +384,7 @@ export async function cloneTask(taskId: string, employeeId?: string) {
 
     let resolvedEmpId = employeeId;
     if (!resolvedEmpId) {
-      let validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
+      const validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (validAssignee) resolvedEmpId = validAssignee.id;
     }
 
@@ -398,9 +402,9 @@ export async function cloneTask(taskId: string, employeeId?: string) {
     revalidatePath("/tasks");
     revalidatePath("/my-work");
     return { success: true, taskId: clonedTask.id };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to clone task:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: messageOf(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -426,8 +430,8 @@ export async function updateTaskDetails(taskId: string, formData: FormData) {
     revalidatePath("/tasks");
     revalidatePath("/my-work");
     return { success: true, task };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to update task:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: messageOf(error, "Something went wrong. Please try again.") };
   }
 }

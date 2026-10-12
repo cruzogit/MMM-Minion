@@ -10,7 +10,8 @@ import { taxCodeShort } from "./item-constants";
 import type { CalcOut, HeaderKey, QuoteDto, QuoteSettings } from "./types";
 
 export type DocLine = {
-  no: number;
+  no: number | null;
+  isHeader: boolean;
   name: string;
   description: string;
   hsn: string;
@@ -119,23 +120,28 @@ export function buildDoc(quote: QuoteDto, layout: ModuleLayoutDto, settings: Quo
   const extraColumns = itemFields.filter(f => !f.isSystem && f.enabled && f.type !== "FILE").map(f => ({ key: f.key, label: f.label }));
   const columnOf = (key: string) => itemFields.find(f => f.key === key);
 
-  const docLines: DocLine[] = quote.lines.map((l, i) => ({
-    no: i + 1,
-    name: l.name,
-    description: l.description,
-    hsn: l.hsn,
-    taxCodeLabel: taxCodeShort(l.kind),
-    unit: l.unit,
-    quantity: l.quantity,
-    rate: l.rate,
-    amount: l.amount,
-    taxName: l.taxName ?? "",
-    taxRate: l.taxRate,
-    extra: Object.fromEntries(extraColumns.map(col => {
-      const f = columnOf(col.key);
-      return [col.key, f ? displayValue(f, l.custom[col.key], quote.refs) : ""];
-    })),
-  }));
+  let lineNo = 0;
+  const docLines: DocLine[] = quote.lines.map(l => {
+    const isHeader = l.custom?.isHeader === true;
+    return {
+      no: isHeader ? null : ++lineNo,
+      isHeader,
+      name: l.name,
+      description: l.description,
+      hsn: l.hsn,
+      taxCodeLabel: taxCodeShort(l.kind),
+      unit: l.unit,
+      quantity: l.quantity,
+      rate: l.rate,
+      amount: l.amount,
+      taxName: l.taxName ?? "",
+      taxRate: l.taxRate,
+      extra: Object.fromEntries(extraColumns.map(col => {
+        const f = columnOf(col.key);
+        return [col.key, f ? displayValue(f, l.custom[col.key], quote.refs) : ""];
+      })),
+    };
+  });
 
   const bank = [
     ["Bank Name", c.bankName], ["Account Holder", c.bankAccountHolder], ["A/c No.", c.bankAccountNumber], ["IFSC Code", c.bankIfsc], ["Branch", c.bankBranch],

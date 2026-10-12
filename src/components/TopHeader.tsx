@@ -7,7 +7,6 @@ import { useSession, signOut } from 'next-auth/react';
 import { 
   Menu, 
   Search, 
-  Bell, 
   ChevronDown, 
   User, 
   Shield, 
@@ -22,7 +21,7 @@ interface TopHeaderProps {
   isCollapsed: boolean;
 }
 
-export default function TopHeader({ onOpenMobile, isCollapsed }: TopHeaderProps) {
+export default function TopHeader({ onOpenMobile }: TopHeaderProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const router = useRouter();
@@ -30,7 +29,7 @@ export default function TopHeader({ onOpenMobile, isCollapsed }: TopHeaderProps)
   const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const isSuperAdmin = !!(session?.user as any)?.isSuperAdmin;
+  const isSuperAdmin = !!session?.user?.isSuperAdmin;
 
   // Find current active item title
   const currentNav = allNavItems.find(
@@ -132,7 +131,7 @@ export default function TopHeader({ onOpenMobile, isCollapsed }: TopHeaderProps)
               </div>
               <div className="hidden sm:flex flex-col items-start text-left">
                 <span className="text-[10px] text-gray-400 font-semibold tracking-wider uppercase leading-tight">
-                  {(session.user as any)?.role || 'USER'}
+                  {session.user.role || 'USER'}
                 </span>
                 <span className="text-[12px] font-bold text-white group-hover:text-yellow-400 transition-colors leading-tight">
                   {session.user.name || 'User'}
@@ -148,7 +147,7 @@ export default function TopHeader({ onOpenMobile, isCollapsed }: TopHeaderProps)
                   <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Signed in as</p>
                   <p className="text-sm font-bold text-white truncate">{session.user.email}</p>
                   <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-400/10 text-yellow-400 border border-yellow-400/20 uppercase">
-                    {(session.user as any)?.role || 'USER'}
+                    {session.user.role || 'USER'}
                   </span>
                 </div>
 

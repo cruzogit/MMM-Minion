@@ -7,6 +7,7 @@ import { Prisma } from "@prisma/client";
 import { ZodError, type ZodIssue } from "zod";
 import { prisma } from "@/lib/db";
 import type { AuthContext } from "@/lib/auth";
+import { checkProfitPercent, checkVendorLineValues } from "./vendor-quote";
 import { ServiceError } from "@/lib/users/service";
 import { removeObjects } from "@/lib/leads/storage";
 import { DEAL_NUMBER_PREFIX } from "@/lib/leads/constants";
@@ -19,7 +20,8 @@ import type { FileDto, LayoutField, ModuleLayoutDto, RecordRefs } from "@/lib/re
 import { needQuotes } from "./access";
 import { listHeader } from "./headers";
 import { calcTotals } from "./calc";
-import { allocateNumber } from "./numbering-server";
+import { allocateNumber, releaseNumber } from "./numbering-server";
+import { claimNewDraft, dropEditDraft, numberIsReserved } from "./draft-server";
 import { loadSettings } from "./settings";
 import { getCustomer } from "./lookups";
 import { loadItemExtras, type ItemExtras } from "./catalog";
@@ -34,6 +36,8 @@ const TX = { maxWait: 10_000, timeout: 20_000 };
 const PAGE_SIZE = 50;
 const MODULE = "quote" as const;
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+// A heading row ("Living Room") between the items: it has text only, no quantity, rate or tax, and is not an item of the quote
+const isHeaderRow = (l: { customFields?: unknown }) => isObject(l.customFields) && l.customFields.isHeader === true;
 const has = (o: Record<string, unknown>, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 const dec = (d: Prisma.Decimal | number | null | undefined): number => (d === null || d === undefined ? 0 : typeof d === "number" ? d : d.toNumber());
 const dayOf = (d: Date | null | undefined): string | null => (d ? d.toISOString().slice(0, 10) : null);
@@ -231,6 +235,11 @@ function lineDto(l: LineRow, x: ItemExtras): LineDto {
   };
 }
 
+function profitOfRow(row: QuoteRow): number | null {
+  const v = isObject(row.customFields) ? row.customFields.vendorProfitPercent : null;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
 function calcOfRow(row: QuoteRow, settings: QuoteSettings): QuoteDto["calc"] {
   const kind = row.tdsTcsKind === "TDS" || row.tdsTcsKind === "TCS" ? row.tdsTcsKind : null;
   const list = kind === "TDS" ? settings.tds : settings.tcs;
@@ -285,7 +294,7 @@ export async function buildQuoteDto(row: QuoteRow, layout: ModuleLayoutDto, sett
   const customer = row.customerId ? await getCustomer(row.customerId) : null;
   return {
     id: row.id, quoteNumber: row.quoteNumber ?? "", numberSeries: row.numberSeries, numberSeq: row.numberSeq, status: row.status, values, lines, calc,
-    totals: totalsOfRow(row, lines, calc, settings), refs, customer, files: (files.get("|attachments") ?? []) as FileDto[],
+    totals: totalsOfRow(row, lines, calc, settings), profitPercent: profitOfRow(row), refs, customer, files: (files.get("|attachments") ?? []) as FileDto[],
     share: shareInfoOf(row, origin), createdBy: row.createdBy?.user?.name?.trim() || row.createdBy?.user?.email || null,
     createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
   };
@@ -321,7 +330,8 @@ function numberIn(v: unknown): number | null {
 }
 const twoDecimals = (n: number) => Math.round(n * 100) / 100 === n;
 
-async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: QuoteSettings, body: QuoteBody, existing: QuoteRow | null): Promise<Checked> {
+// Exported so the rules can be tested without a database
+export async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: QuoteSettings, body: QuoteBody, existing: QuoteRow | null): Promise<Checked> {
   const issues: ZodIssue[] = [];
   const values = isObject(body.values) ? body.values : {};
   const formFields = formFieldsOf(layout);
@@ -361,6 +371,11 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
     else out.custom[f.key] = res.value;
   }
 
+  // Upload Vendor Quote: the profit percentage (kept with the quote's own values; nothing is cleared by a body that does not send it)
+  const profit = checkProfitPercent(body.profitPercent);
+  if (profit.error) issues.push(issue(["profitPercent"], profit.error));
+  else if (body.profitPercent !== undefined) out.custom.vendorProfitPercent = profit.value;
+
   // Item table
   const itemCols = itemColumnsOf(layout).filter(c => c.enabled && !c.isSystem && c.type !== "FILE");
   const knownCols = new Set(itemColumnsOf(layout).map(c => c.key));
@@ -371,6 +386,7 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
   const templateIds = new Set((await projectTemplates()).map(o => o.id));
   const templateColumn = itemColumnsOf(layout).find(c => c.key === "taskTemplateId");
   const calcLines: { quantity: number; rate: number; tax: TaxInfo | null }[] = [];
+  let realLines = 0; // the rows that are items (a heading is not one)
   rawLines.slice(0, MAX_LINES).forEach((l, i) => {
     const at = (k: string) => ["lines", i, k];
     if (!isObject(l)) { issues.push(issue(["lines", i], "An item is not valid")); return; }
@@ -392,6 +408,21 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
     if (rate === null || rate < 0 || rate > 99_999_999.99 || !twoDecimals(rate)) { issues.push(issue(at("rate"), "Rate must be an amount from 0 to 99,999,999.99 with two decimals at most")); return; }
     const id = typeof l.id === "string" && l.id ? l.id : null;
     if (id && !mine.has(id)) { issues.push(issue(["lines", i], "An item no longer exists. Reload the page and try again.")); return; }
+    const customIn = isObject(l.custom) ? l.custom : {};
+    if (customIn.isHeader === true) {
+      if (!name) return; // a heading with no text is dropped like an empty row
+      calcLines.push({ quantity: 1, rate: 0, tax: null });
+      out.lines.push({
+        id,
+        data: {
+          sortOrder: out.lines.length, itemId: null, name, description: "", hsn: null, kind: null, taskTemplateId: null, unit: "", category: "General", quantity: 1, rate: 0, amount: 0,
+          taxId: null, taxName: null, taxRate: null, taxAmount: 0, customFields: json({ isHeader: true }),
+        },
+        out: { amount: 0, taxAmount: 0 },
+      });
+      return;
+    }
+    realLines++;
     const itemId = l.itemId === undefined || l.itemId === null || l.itemId === "" ? null : isId(l.itemId) ? l.itemId : (issues.push(issue(at("itemId"), "is not valid")), null);
     const taxId = l.taxId === undefined || l.taxId === null || l.taxId === "" ? null : typeof l.taxId === "string" ? l.taxId : null;
     const tax = taxId ? activeTax.get(taxId) : undefined;
@@ -408,8 +439,10 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
       if (before?.taskTemplateId === taskTemplateId) taskTemplateId = null; // the template was deleted since this line was saved
       else { issues.push(issue(at("taskTemplateId"), "Choose a Task Template from the list")); return; }
     }
-    const customIn = isObject(l.custom) ? l.custom : {};
-    for (const k of Object.keys(customIn)) if (!knownCols.has(k)) issues.push(issue(["lines", i, "custom", k], "A column no longer exists. Reload the page and try again."));
+    for (const k of Object.keys(customIn)) {
+      if (k === "isHeader" || k === "vendorRate" || k === "rateManual") continue; // isHeader: only ever "false" here (a heading was dealt with above); the other two belong to Upload Vendor Quote
+      if (!knownCols.has(k)) issues.push(issue(["lines", i, "custom", k], "A column no longer exists. Reload the page and try again."));
+    }
     const custom: Record<string, unknown> = {};
     const missing: LayoutField[] = [];
     let customFilled = false;
@@ -419,8 +452,12 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
       if (!emptyOf(c, res.value)) { customFilled = true; custom[c.key] = res.value; }
       else if (c.required) missing.push(c);
     }
+    // Upload Vendor Quote: the vendor's rate a selling rate was worked out from, and whether the selling rate was typed by hand since
+    const vendor = checkVendorLineValues(customIn);
+    if (vendor.error) { issues.push(issue(["lines", i, "custom", "vendorRate"], vendor.error)); return; }
+    if (vendor.vendorRate !== undefined) { custom.vendorRate = vendor.vendorRate; if (vendor.rateManual) custom.rateManual = true; }
     const blank = !name && !description && !itemId && rate === 0 && !customFilled && !hsn;
-    if (blank) return; // an empty row is simply dropped
+    if (blank) { realLines--; return; } // an empty row is simply dropped
     if (body.intent !== "draft") for (const c of missing) issues.push(issue(["lines", i, "custom", c.key], `${c.label} is required`));
     if (!name && body.intent !== "draft") { issues.push(issue(at("name"), "Item Details is required")); return; }
     if (templateColumn?.enabled && templateColumn.required && !taskTemplateId && body.intent !== "draft") { issues.push(issue(at("taskTemplateId"), `${templateColumn.label} is required`)); return; }
@@ -460,7 +497,7 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
     else out.calcInput.withholding = { kind: w.kind, id: def.id, name: def.name, rate: def.rate };
   }
 
-  if (body.intent === "send" && out.lines.length === 0 && !issues.length) issues.push(issue(["lines"], "Add at least one item before sending the quote"));
+  if (body.intent === "send" && realLines === 0 && !issues.length) issues.push(issue(["lines"], "Add at least one item before sending the quote"));
   if (issues.length) throw new ZodError(issues);
 
   // Totals: the server decides
@@ -486,10 +523,9 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
     }
   }
   if (need.deal.size) {
-    const found = new Map((await prisma.deal.findMany({ where: { id: { in: Array.from(need.deal.keys()) }, deletedAt: null, dealNumber: { startsWith: DEAL_NUMBER_PREFIX } }, select: { id: true, customerId: true } })).map(x => [x.id, x.customerId]));
+    const found = new Set((await prisma.deal.findMany({ where: { id: { in: Array.from(need.deal.keys()) }, deletedAt: null, dealNumber: { startsWith: DEAL_NUMBER_PREFIX } }, select: { id: true } })).map(x => x.id));
     for (const [k, v] of need.deal) {
       if (!found.has(k)) issues.push(issue(v.path, `${v.label} must be an existing deal`));
-      else if (customerId && v.path[1] === "dealId" && found.get(k) !== customerId) issues.push(issue(v.path, `${v.label} belongs to another customer`));
     }
   }
   if (need.materialVendor.size) {
@@ -523,7 +559,7 @@ async function log(db: Db, ctx: AuthContext, quoteId: string, action: string, ol
 }
 
 function textOfLog(action: string, oldV: Record<string, unknown> | null, newV: Record<string, unknown> | null, layout: ModuleLayoutDto): string {
-  const label = (k: string) => layout.fields.find(f => f.key === k || f.key === k.replace(/^customFields\./, ""))?.label ?? k.replace(/^customFields\./, "");
+  const label = (k: string) => (k === "customFields.vendorProfitPercent" ? "profit percentage" : layout.fields.find(f => f.key === k || f.key === k.replace(/^customFields\./, ""))?.label ?? k.replace(/^customFields\./, ""));
   switch (action) {
     case "Created": return `Quote ${newV?.quoteNumber ?? ""} created${newV?.total !== undefined ? ` (total ${Number(newV.total).toFixed(2)})` : ""}`.trim();
     case "Updated": {
@@ -602,7 +638,17 @@ function statusFor(intent: QuoteBody["intent"], current: string | null): QuoteSt
   return isQuoteStatus(current) ? current : "Draft";
 }
 
-export async function createQuote(ctx: AuthContext, body: QuoteBody): Promise<{ id: string; quoteNumber: string; status: string }> {
+// Somebody else changed the quote after the person started editing it: Save asks before it overwrites
+export class QuoteStaleError extends ServiceError {
+  constructor(message: string) {
+    super(409, message);
+    this.name = "QuoteStaleError";
+  }
+}
+
+// `draftId`: the quote started as an auto-saved draft. Its reserved number becomes the number of the quote and the draft is deleted in the same transaction,
+// so Save never makes a second record or a second number, and saving twice (a double click, two windows) saves once.
+export async function createQuote(ctx: AuthContext, body: QuoteBody, draftId: string | null = null): Promise<{ id: string; quoteNumber: string; status: string }> {
   needQuotes(ctx, "create");
   const [layout, settings] = await Promise.all([getLayout(MODULE), loadSettings()]);
   const checked = await checkInput(ctx, layout, settings, body, null);
@@ -613,7 +659,13 @@ export async function createQuote(ctx: AuthContext, body: QuoteBody): Promise<{ 
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const created = await prisma.$transaction(async tx => {
-        const num = checked.manualNumber ? { number: checked.manualNumber, series: null as string | null, seq: null as number | null } : await allocateNumber(tx, settings.numbering, day);
+        const reserved = draftId ? await claimNewDraft(tx, ctx, draftId) : null;
+        if (checked.manualNumber && (await numberIsReserved(tx, checked.manualNumber, null))) throw new ServiceError(409, `The quote number ${checked.manualNumber} is held by a quote in progress.`);
+        const num = checked.manualNumber
+          ? { number: checked.manualNumber, series: null as string | null, seq: null as number | null }
+          : reserved ? { number: reserved.number, series: reserved.series, seq: reserved.seq } : await allocateNumber(tx, settings.numbering, day);
+        // a number typed by hand replaces the reserved one: the reserved one is given back
+        if (checked.manualNumber && reserved && reserved.series !== null && reserved.seq !== null) await releaseNumber(tx, reserved.series, reserved.seq);
         const row = await tx.quote.create({
           data: {
             quoteNumber: num.number, numberSeries: num.series, numberSeq: num.seq, status, ...checked.columns, ...totalsColumns(checked),
@@ -641,10 +693,15 @@ export async function createQuote(ctx: AuthContext, body: QuoteBody): Promise<{ 
   throw new ServiceError(409, "Could not take a free quote number. Please try again.");
 }
 
-export async function updateQuote(ctx: AuthContext, id: string, body: QuoteBody): Promise<{ id: string; quoteNumber: string; status: string }> {
+export async function updateQuote(ctx: AuthContext, id: string, body: QuoteBody, opts: { force?: boolean } = {}): Promise<{ id: string; quoteNumber: string; status: string }> {
   needQuotes(ctx, "edit");
   const row = await loadRow(id);
   if (row.status === "Invoiced") throw new ServiceError(409, "An invoiced quote cannot be edited.");
+  // The working copy this person edited was started from an older version of the quote: somebody saved it since. Save asks before it overwrites that.
+  const mine = await prisma.quoteDraft.findUnique({ where: { userId_quoteId: { userId: ctx.userId, quoteId: id } }, select: { baseUpdatedAt: true } });
+  if (!opts.force && mine?.baseUpdatedAt && row.updatedAt.getTime() > mine.baseUpdatedAt.getTime()) {
+    throw new QuoteStaleError("This quote was saved by someone else after you started editing it. Saving now replaces their changes with yours.");
+  }
   const [layout, settings] = await Promise.all([getLayout(MODULE), loadSettings()]);
   const checked = await checkInput(ctx, layout, settings, body, row);
   let status: QuoteStatus = statusFor(body.intent, row.status);
@@ -664,6 +721,7 @@ export async function updateQuote(ctx: AuthContext, id: string, body: QuoteBody)
     });
     await writeLines(tx, id, checked, { lineItems: current });
     removed.push(...(await bindFiles(tx, ctx, MODULE, id, [...checked.slots], [])));
+    await dropEditDraft(tx, ctx, id); // saved: the working copy of this edit is not needed any more
 
     const before = { ...(row as unknown as Record<string, unknown>), ...Object.fromEntries(Object.entries(isObject(row.customFields) ? row.customFields : {}).map(([k, v]) => [`customFields.${k}`, v])) };
     const changes = changesOf(before, { ...checked.columns, ...Object.fromEntries(Object.entries(checked.custom).map(([k, v]) => [`customFields.${k}`, v])) });
@@ -748,7 +806,7 @@ export async function revokeShare(ctx: AuthContext, id: string) {
 export async function sendQuote(ctx: AuthContext, id: string, origin: string, input: { channel: "email" | "whatsapp" | "link"; to?: string }) {
   needQuotes(ctx, "edit");
   const row = await loadRow(id);
-  if (row.lineItems.length === 0) throw new ServiceError(409, "Add at least one item before sending the quote.");
+  if (row.lineItems.every(isHeaderRow)) throw new ServiceError(409, "Add at least one item before sending the quote.");
   const share = await createShare(ctx, id, origin);
   const to = typeof input.to === "string" ? stripControl(input.to).trim().slice(0, 200) : "";
   let status = row.status;
@@ -773,7 +831,7 @@ export const CONVERT_TARGETS = [
 export async function convertQuote(ctx: AuthContext, id: string, target: string) {
   needQuotes(ctx, "edit");
   const row = await loadRow(id);
-  if (row.lineItems.length === 0) throw new ServiceError(409, "Add at least one item before converting the quote.");
+  if (row.lineItems.every(isHeaderRow)) throw new ServiceError(409, "Add at least one item before converting the quote.");
   if (target === "invoice") {
     if (row.status === "Invoiced") throw new ServiceError(409, "This quote is already invoiced.");
     if (row.status === "Draft") throw new ServiceError(409, "Send the quote before converting it to an invoice.");

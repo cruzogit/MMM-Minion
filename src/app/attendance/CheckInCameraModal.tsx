@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useId } from 'react';
 import {
-  X,
   Camera,
   CameraOff,
   ScanFace,

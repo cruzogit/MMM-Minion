@@ -359,8 +359,8 @@ export async function createLead(formData: {
   }
 
   // 6. Auto-create follow-up task
-  if (formData.salesExecutiveId || employee?.id) {
-    const assigneeId = formData.salesExecutiveId || employee?.id!;
+  const assigneeId = formData.salesExecutiveId || employee?.id;
+  if (assigneeId) {
     const fuCount = await prisma.followUp.count();
     await prisma.followUp.create({
       data: {

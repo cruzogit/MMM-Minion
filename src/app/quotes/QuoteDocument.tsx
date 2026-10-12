@@ -30,7 +30,7 @@ export default function QuoteDocument({ doc, watermark = true, forPdf = false }:
   const { company, customer, totals, currency } = doc;
   const money = (n: number) => formatMoney(n, currency.symbol, currency.grouping);
   const amount = (n: number) => formatAmount(n, currency.grouping);
-  const qty = doc.lines.reduce((a, l) => a + l.quantity, 0);
+  const qty = doc.lines.reduce((a, l) => (l.isHeader ? a : a + l.quantity), 0);
 
   const totalRows: { key: string; label: string; value: string; bold?: boolean }[] = [{ key: 'sub', label: 'Sub Total', value: amount(totals.subTotal) }];
   if (totals.discountAmount > 0) totalRows.push({ key: 'disc', label: `Discount${doc.calc.discountPercent ? ` (${doc.calc.discountPercent}%)` : ''}`, value: `(-) ${amount(totals.discountAmount)}` });
@@ -134,13 +134,17 @@ export default function QuoteDocument({ doc, watermark = true, forPdf = false }:
             </tr>
           </thead>
           <tbody>
-            {doc.lines.map(l => (
-              <tr key={l.no} className={`align-top ${body}`} style={{ borderTop: line }}>
+            {doc.lines.map((l, i) => l.isHeader ? (
+              <tr key={`h-${i}`} className={`align-top ${body}`} style={{ borderTop: line }}>
+                <td colSpan={5 + doc.extraColumns.length} className="px-[7px] py-[6px] font-bold" style={{ borderRight: line }}>{l.name}</td>
+              </tr>
+            ) : (
+              <tr key={l.no!} className={`align-top ${body}`} style={{ borderTop: line }}>
                 <td className="px-[7px] pt-[1px] pb-[20px] text-center leading-[19px]" style={{ borderRight: line, height: 72 }}>{l.no}</td>
                 <td className="px-[7px] pt-[1px] pb-[20px] leading-[17px]" style={{ borderRight: line }}>
-                  <div className="whitespace-pre-line">{l.name}</div>
-                  {l.description && <div className="whitespace-pre-line">{l.description}</div>}
-                  {l.hsn && <div>{l.taxCodeLabel} : {l.hsn}</div>}
+                  <div className="whitespace-pre-line font-bold">{l.name}</div>
+                  {l.description && <div className="whitespace-pre-line text-[9px] mt-[2px]">{l.description}</div>}
+                  {l.hsn && <div className="text-[9px] mt-[2px]">{l.taxCodeLabel} : {l.hsn}</div>}
                 </td>
                 {doc.extraColumns.map(c => <td key={c.key} className="px-[7px] pt-[1px] pb-[20px] leading-[17px]" style={{ borderRight: line }}>{l.extra[c.key]}</td>)}
                 <td className="px-[7px] pt-[1px] pb-[20px] text-right leading-[19px]" style={{ borderRight: line }}>

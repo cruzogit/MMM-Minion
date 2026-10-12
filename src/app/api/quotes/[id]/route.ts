@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJson, withAuthRoute } from "@/lib/api";
 import { quoteAbilities } from "@/lib/quotes/access";
-import { deleteQuote, getQuote, updateQuote } from "@/lib/quotes/service";
+import { deleteQuote, getQuote, QuoteStaleError, updateQuote } from "@/lib/quotes/service";
 import type { QuoteBody } from "@/lib/quotes/types";
 import { originOf, quoteBodySchema } from "../helpers";
 
@@ -20,8 +20,15 @@ export async function GET(request: Request, { params }: Params) {
 export async function PUT(request: Request, { params }: Params) {
   return withAuthRoute(request, async ctx => {
     const { id } = await params;
-    const body = await readJson(request, quoteBodySchema);
-    return NextResponse.json({ success: true, ...(await updateQuote(ctx, id, body as unknown as QuoteBody)) });
+    const { draftId: _draft, force, ...body } = await readJson(request, quoteBodySchema);
+    void _draft;
+    try {
+      return NextResponse.json({ success: true, ...(await updateQuote(ctx, id, body as unknown as QuoteBody, { force: force === true })) });
+    } catch (e) {
+      // the page asks "save anyway?" and sends the same body again with force
+      if (e instanceof QuoteStaleError) return NextResponse.json({ error: e.message, code: "STALE" }, { status: 409 });
+      throw e;
+    }
   });
 }
 

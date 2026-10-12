@@ -93,19 +93,19 @@ export default function ProjectOverview({ project }: ProjectOverviewProps) {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-gray-500 font-semibold uppercase">Lead</span>
-                  <Link href="/crm" className="text-[12px] font-mono text-blue-400 hover:underline flex items-center gap-1">
+                  <Link href="/leads" className="text-[12px] font-mono text-blue-400 hover:underline flex items-center gap-1">
                     {project.crmRefs.leadId} <ArrowUpRight className="w-3 h-3" />
                   </Link>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-gray-500 font-semibold uppercase">Deal</span>
-                  <Link href="/crm" className="text-[12px] font-mono text-blue-400 hover:underline flex items-center gap-1">
+                  <Link href="/deals" className="text-[12px] font-mono text-blue-400 hover:underline flex items-center gap-1">
                     {project.crmRefs.dealId} <ArrowUpRight className="w-3 h-3" />
                   </Link>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-gray-500 font-semibold uppercase">Quote</span>
-                  <Link href="/crm" className="text-[12px] font-mono text-blue-400 hover:underline flex items-center gap-1">
+                  <Link href="/quotes" className="text-[12px] font-mono text-blue-400 hover:underline flex items-center gap-1">
                     {project.crmRefs.quoteId} <ArrowUpRight className="w-3 h-3" />
                   </Link>
                 </div>

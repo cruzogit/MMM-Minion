@@ -16,6 +16,9 @@ export const quoteBodySchema = z.object({
     adjustment: z.unknown().optional(),
   }).strict().default({}),
   intent: z.enum(["draft", "save", "send"]),
+  profitPercent: z.union([z.number(), z.string().max(20), z.null()]).optional(),
+  draftId: z.string().max(64).nullable().optional(), // Add Quote: the auto-saved draft this quote started as
+  force: z.boolean().optional(), // Edit Quote: save although somebody else saved the quote meanwhile
 }).strict();
 
 // The body of an item (create and edit): what the New Item form sends. Every key is optional here; the service decides what is required.

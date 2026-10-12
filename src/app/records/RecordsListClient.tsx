@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Download, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Loader2, Plus, RefreshCw, Upload } from 'lucide-react';
 import { ApiError, callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import { MODULES } from '@/lib/records/registry';
@@ -17,6 +17,7 @@ import HeaderCell, { type FilterGroup, type HeaderColumn } from '@/app/leads/com
 import LightConfirm from '@/app/leads/components/LightConfirm';
 import { LayoutButton } from './layout-editor/LayoutEditor';
 import RecordActions from './components/RecordActions';
+import ImportRecordsModal from './components/ImportRecordsModal';
 import { api } from './client';
 
 // Column widths: the class names are written out in full so Tailwind finds them
@@ -52,6 +53,7 @@ export default function RecordsListClient({ moduleId, layout, data, params, abil
   const [q, setQ] = useState(params.q ?? '');
   const [deleting, setDeleting] = useState<Deleting>(null);
   const [busy, setBusy] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   // While a reset is on its way, the search box's own delayed update must not put the old search back in the address
   const resetting = useRef(false);
 
@@ -163,6 +165,27 @@ export default function RecordsListClient({ moduleId, layout, data, params, abil
             ) : (
               <span className={`${iconBtn} opacity-30 cursor-not-allowed`} title="You do not have permission to export"><Download className="w-5 h-5" /></span>
             )}
+            {(moduleId === 'prePayment' || moduleId === 'paymentCollection') && (
+              abilities.create ? (
+                <button
+                  type="button"
+                  onClick={() => setShowImport(true)}
+                  title={`Import ${def.label} Records (CSV / XLSX)`}
+                  aria-label={`Import ${def.label} Records`}
+                  className={iconBtn}
+                >
+                  <Upload className="w-5 h-5" />
+                </button>
+              ) : (
+                <span
+                  className={`${iconBtn} opacity-30 cursor-not-allowed`}
+                  title={`You do not have permission to import ${def.plural.toLowerCase()}`}
+                  aria-disabled="true"
+                >
+                  <Upload className="w-5 h-5" />
+                </span>
+              )
+            )}
           </div>
         </div>
 
@@ -251,6 +274,18 @@ export default function RecordsListClient({ moduleId, layout, data, params, abil
             <p><b>{deleting.code}</b> will be removed from the list. Its ID is never used again.</p>
           )}
         </LightConfirm>
+      )}
+
+      {showImport && (
+        <ImportRecordsModal
+          moduleId={moduleId}
+          onClose={() => setShowImport(false)}
+          onImported={(msg) => {
+            setShowImport(false);
+            toast.success(msg);
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );

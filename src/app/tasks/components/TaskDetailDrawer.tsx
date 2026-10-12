@@ -1,7 +1,7 @@
 'use client';
 
 import { Task } from '../data/mock';
-import { X, Clock, User, Link as LinkIcon, Paperclip, MessageSquare, Activity, CheckSquare, Edit2, PlayCircle, Plus, Copy, Trash2, Save } from 'lucide-react';
+import { X, Clock, User, Link as LinkIcon, Paperclip, Activity, CheckSquare, Edit2, PlayCircle, Plus, Copy, Trash2, Save } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { updateTaskStatus, addChecklistItem, toggleChecklistItem, addTaskComment, cloneTask, deleteTask, updateTaskDetails } from '../actions';
@@ -268,7 +268,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
                   {task.customerName && (
                     <div className="flex flex-col">
                       <span className="text-[10px] text-gray-500 font-semibold uppercase mb-1">Customer</span>
-                      <Link href={`/crm`} className="text-[12px] font-bold text-blue-400 hover:underline">
+                      <Link href="/customers" className="text-[12px] font-bold text-blue-400 hover:underline">
                         {task.customerName}
                       </Link>
                     </div>

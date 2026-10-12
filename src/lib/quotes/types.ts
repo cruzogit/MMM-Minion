@@ -277,6 +277,9 @@ export type QuoteBody = {
   lines: LineInput[];
   calc: CalcInput;
   intent: "draft" | "save" | "send"; // Save as Draft, Save, Save and Send
+  profitPercent?: number | string | null; // Upload Vendor Quote: the markup on the vendor rates of the lines that came from a vendor quote (null = none)
+  draftId?: string | null; // a new quote: the quote in progress (auto-save) this Save turns into the quote; it keeps the number it reserved
+  force?: boolean; // a saved quote: save although it was changed by someone else after this editing started
 };
 
 export type ShareInfo = { token: string | null; url: string | null; expiresAt: string | null };
@@ -293,6 +296,7 @@ export type QuoteDto = {
   lines: LineDto[];
   calc: { discountPercent: number; shippingCharges: number; withholding: { kind: "TDS" | "TCS"; taxId: string; name: string; rate: number } | null; adjustmentLabel: string; adjustment: number };
   totals: CalcOut;
+  profitPercent: number | null; // see QuoteBody
   refs: RecordRefs;
   customer: CustomerDto | null;
   files: FileDto[];

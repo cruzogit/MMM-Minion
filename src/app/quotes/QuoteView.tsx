@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import Link, { useLinkStatus } from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { CheckCircle2, ChevronDown, Copy, FileText, LayoutTemplate, Mail, MessageSquare, MoreHorizontal, Paperclip, Pencil, Plus, Printer, Repeat2, Send, Settings, Share2, Trash2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Copy, FileText, LayoutTemplate, Mail, MessageSquare, MoreHorizontal, Paperclip, Pencil, Plus, Printer, Repeat2, Search, Send, Settings, Share2, Trash2, X, XCircle } from 'lucide-react';
 import { callApi } from '@/lib/leads/client';
 import { formatBytes } from '@/lib/leads/image-optimize';
 import { useToast } from '@/components/ui/Toast';
@@ -69,6 +69,58 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
   const [activityError, setActivityError] = useState('');
   const [pdfBusy, setPdfBusy] = useState(false); // while the PDF is made, an off-screen copy of the document (and nothing else) is on the page
   const exportRef = useRef<HTMLDivElement>(null);
+
+  const [pending, startTransition] = useTransition();
+  const [searchOpen, setSearchOpen] = useState(!!params.q);
+  const [term, setTerm] = useState(params.q ?? '');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if ((params.q ?? '') === term.trim()) return;
+    const t = setTimeout(() => {
+      startTransition(() => {
+        router.replace(`/quotes/${quote.id}${queryOf(params, { q: term.trim() || undefined })}`);
+      });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [term, quote.id, params, router]);
+
+  useEffect(() => {
+    if (searchOpen) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchOpen]);
+
+  const [prevQ, setPrevQ] = useState(params.q);
+  if (prevQ !== params.q) {
+    setPrevQ(params.q);
+    setTerm(params.q ?? '');
+    if (params.q) setSearchOpen(true);
+  }
+
+  const toggleSearch = () => {
+    if (searchOpen) {
+      if (term || params.q) {
+        setTerm('');
+        startTransition(() => {
+          router.replace(`/quotes/${quote.id}${queryOf(params, { q: undefined })}`);
+        });
+      }
+      setSearchOpen(false);
+    } else {
+      setSearchOpen(true);
+    }
+  };
+
+  const clearSearch = () => {
+    setTerm('');
+    if (params.q) {
+      startTransition(() => {
+        router.replace(`/quotes/${quote.id}${queryOf(params, { q: undefined })}`);
+      });
+    }
+    searchInputRef.current?.focus();
+  };
 
   const money = (n: number) => formatMoney(n, settings.display.currencySymbol, settings.display.grouping);
   const query = queryOf(params, {});
@@ -204,9 +256,22 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
               ))}
             </Menu>
           )}
-          {abilities.create && <Link href="/quotes/new" aria-label="New quote" title="New quote" className="w-[32px] h-[32px] rounded-[4px] bg-[#548df6] hover:bg-[#4a82ea] text-white flex items-center justify-center"><Plus className="w-4 h-4" /></Link>}
+          {abilities.create && <Link href="/quotes/new" aria-label="New quote" title="New quote" className="w-[32px] h-[32px] rounded-[4px] bg-[#548df6] hover:bg-[#4a82ea] text-white flex items-center justify-center shrink-0"><Plus className="w-4 h-4" /></Link>}
+          <button
+            type="button"
+            onClick={toggleSearch}
+            aria-label={searchOpen ? 'Close search' : 'Search quotes'}
+            title="Search quotes"
+            className={`w-[32px] h-[32px] rounded-[4px] border flex items-center justify-center shrink-0 transition-colors ${
+              searchOpen || params.q
+                ? 'border-[#548df6] bg-[#eef4ff] text-[#548df6]'
+                : 'border-[#d7d5e1] hover:bg-[#f1f1fa] text-[#575a6f]'
+            }`}
+          >
+            <Search className="w-4 h-4" />
+          </button>
           <Menu align="right" width={210} trigger={({ toggle }) => (
-            <button type="button" onClick={toggle} aria-label="More" aria-haspopup="menu" className="w-[32px] h-[32px] rounded-[4px] border border-[#d7d5e1] hover:bg-[#f1f1fa] flex items-center justify-center"><MoreHorizontal className="w-4 h-4" /></button>
+            <button type="button" onClick={toggle} aria-label="More" aria-haspopup="menu" className="w-[32px] h-[32px] rounded-[4px] border border-[#d7d5e1] hover:bg-[#f1f1fa] flex items-center justify-center shrink-0"><MoreHorizontal className="w-4 h-4" /></button>
           )}>
             {close => (
               <>
@@ -217,6 +282,51 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
             )}
           </Menu>
         </div>
+        {searchOpen && (
+          <div className="px-[16px] pb-[10px] flex items-center gap-2 shrink-0 bg-[#f9f9fb]">
+            <div className="relative flex-1">
+              {pending ? (
+                <Spinner className="w-3.5 h-3.5 text-[#548df6] absolute left-2.5 top-1/2 -translate-y-1/2" />
+              ) : (
+                <Search className="w-3.5 h-3.5 text-[#9ca0ab] absolute left-2.5 top-1/2 -translate-y-1/2" aria-hidden />
+              )}
+              <input
+                ref={searchInputRef}
+                value={term}
+                onChange={e => setTerm(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') {
+                    clearSearch();
+                    setSearchOpen(false);
+                  }
+                }}
+                placeholder="Search quotes by number, customer..."
+                aria-label="Search quotes"
+                className="w-full h-[32px] pl-8 pr-7 text-[12.5px] border border-[#d7d5e1] rounded-[4px] bg-white focus:outline-none focus:border-[#548df6]"
+              />
+              {term && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={clearSearch}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9ca0ab] hover:text-[#22263b]"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                clearSearch();
+                setSearchOpen(false);
+              }}
+              className="text-[12px] text-[#6d7189] hover:text-[#22263b] px-1 shrink-0 font-medium"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
         <ul className="flex-1 overflow-y-auto q-scroll border-t border-[#ebeaf2]" data-quote-list>
           {rows.map(r => (
             <li key={r.id} className={`flex gap-3 pl-[21px] pr-[16px] py-[14px] border-b border-[#ebeaf2] ${r.id === quote.id ? 'bg-[#f1f1fa]' : 'hover:bg-[#f6f6fa]'}`} aria-current={r.id === quote.id ? 'true' : undefined}>
@@ -231,7 +341,21 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
               </Link>
             </li>
           ))}
-          {rows.length === 0 && <li className="px-4 py-8 text-center text-[13px] text-[#6d7189]">No quotes match.</li>}
+          {rows.length === 0 && (
+            <li className="px-4 py-8 text-center text-[13px] text-[#6d7189]">
+              <FileText className="w-7 h-7 mx-auto text-[#c9cbd6] mb-2" aria-hidden />
+              <p>No quotes match{term.trim() ? ` "${term.trim()}"` : ''}.</p>
+              {(term || params.q) && (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="mt-2 text-[12.5px] text-[#548df6] hover:underline"
+                >
+                  Clear search
+                </button>
+              )}
+            </li>
+          )}
           {hasMore && <li className="p-3 text-center"><Button kind="ghost" onClick={loadMore} busy={loadingMore}>Load more</Button></li>}
         </ul>
       </aside>

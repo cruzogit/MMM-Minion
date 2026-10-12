@@ -4,22 +4,15 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
   Home, 
-  Briefcase, 
-  Target, 
   LayoutGrid, 
-  TreePine, 
   CheckCircle2, 
   Users, 
-  BookOpen, 
-  Gift, 
-  Library, 
   Shield, 
   ChevronLeft, 
   ChevronRight, 
   X, 
   LogOut,
   ClipboardList,
-  UsersRound,
   Handshake,
   FileText,
   Package,
@@ -32,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
 import { useState, useEffect } from 'react';
+import type { SidebarGroup } from './SidebarLayoutEditor';
 
 export interface NavItem {
   label: string;
@@ -74,7 +68,7 @@ export default function Sidebar({
   const { data: session } = useSession();
   const router = useRouter();
 
-  const [layout, setLayout] = useState<any[] | null>(null);
+  const [layout, setLayout] = useState<SidebarGroup[] | null>(null);
 
   useEffect(() => {
     fetch('/api/settings/sidebar').then(res => res.json()).then(data => {
@@ -82,8 +76,8 @@ export default function Sidebar({
     }).catch(() => setLayout([]));
   }, []);
 
-  const permissions = (session?.user as any)?.permissions || [];
-  const isSuperAdmin = !!(session?.user as any)?.isSuperAdmin;
+  const permissions = session?.user?.permissions ?? [];
+  const isSuperAdmin = !!session?.user?.isSuperAdmin;
 
   const visibleNavItems = allNavItems.filter((item) => {
     if (!item.requiredPermission) return true;
@@ -243,7 +237,7 @@ export default function Sidebar({
                       {session.user.name || 'User'}
                     </span>
                     <span className="text-[10px] text-gray-400 font-medium truncate uppercase">
-                      {(session.user as any)?.role || 'User'}
+                      {session.user.role || 'User'}
                     </span>
                   </div>
                 )}

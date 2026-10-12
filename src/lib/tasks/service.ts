@@ -72,7 +72,7 @@ const ROW_SELECT = {
   assignedBy: { select: { id: true, user: { select: { name: true } } } },
   lead: { select: { id: true, leadCode: true, customerName: true, contactNumber: true, exactRequirement: true, requirement: true, customer: { select: { customerCode: true } } } },
   customer: { select: { customerCode: true } },
-  
+  _count: { select: { resources: true } },
 } satisfies Prisma.TaskSelect;
 type RowRecord = Prisma.TaskGetPayload<{ select: typeof ROW_SELECT }>;
 
@@ -110,7 +110,7 @@ function toRow(t: RowRecord, ctx: AuthContext, scope: TaskScope, now: Date, toda
     productId: t.productId,
     customerCode: t.customer?.customerCode ?? t.lead?.customer?.customerCode ?? null,
     starred: t.starred,
-    filesCount: 0,
+    filesCount: t._count.resources,
     requiresCompletionProof: t.requiresCompletionProof,
     can: capabilities(ctx, scope, t),
   };
@@ -227,8 +227,8 @@ export async function getTaskDetail(ctx: AuthContext, id: string): Promise<TaskD
   const t = await loadVisible(scope, id);
   const layout = await getTaskLayout();
   const now = new Date();
-  const files: any[] = [];
-  const [history, links] = await Promise.all([
+  const [files, history, links] = await Promise.all([
+    prisma.resource.findMany({ where: { taskId: id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, storagePath: true, mimeType: true, size: true, createdAt: true } }),
     prisma.taskAuditLog.findMany({ where: { taskId: id }, orderBy: { createdAt: "desc" }, take: 20, select: { action: true, createdAt: true, employee: { select: { user: { select: { name: true } } } } } }),
     prisma.task.findUnique({ where: { id }, select: { projectId: true, dealId: true, leadId: true, project: { select: { name: true } }, deal: { select: { dealNumber: true, title: true } } } }),
   ]);
@@ -443,7 +443,7 @@ export async function completeTask(ctx: AuthContext, id: string) {
   need(ctx, "edit");
   const me = requireEmployee(ctx);
   const t = await loadForAction(ctx, id, "complete");
-  
+  if (t.requiresCompletionProof && t._count.resources === 0) throw badRequest("Upload a proof file before completing this task.");
   await prisma.$transaction(async tx => {
     await tx.task.update({ where: { id }, data: { status: "Completed", completedAt: new Date() } });
     await audit(tx, id, me, "COMPLETED", t.status, "Completed");
@@ -464,9 +464,63 @@ export async function toggleStar(ctx: AuthContext, id: string) {
 export async function deleteTask(ctx: AuthContext, id: string) {
   need(ctx, "delete");
   await loadForAction(ctx, id, "delete");
-  const files: any[] = [];
+  const files = await prisma.resource.findMany({ where: { taskId: id }, select: { storagePath: true } });
   // File records first: their link to the task is "set null", so they would be left behind once the task is gone
-  await prisma.task.delete({ where: { id } }); // comments, checklist and history go with the task
+  await prisma.$transaction([prisma.resource.deleteMany({ where: { taskId: id } }), prisma.task.delete({ where: { id } })]); // comments, checklist and history go with the task
   await removeObjects(files.map(f => f.storagePath), TASK_BUCKET);
 }
-
+
+export async function signTaskFiles(ctx: AuthContext, id: string, files: { name: string; type: string; size: number }[]) {
+  need(ctx, "edit");
+  await loadForAction(ctx, id, "upload");
+  const existing = await prisma.resource.count({ where: { taskId: id } });
+  if (existing + files.length > MAX_TASK_FILES) throw badRequest(`A task can have at most ${MAX_TASK_FILES} files.`);
+  const uploads: { index: number; path: string; uploadUrl: string }[] = [];
+  for (const [index, f] of files.entries()) {
+    const ext = isAllowedAudioType(f.type) ? AUDIO_FILE_EXTENSIONS[f.type] : isAllowedImageType(f.type) ? IMAGE_FILE_EXTENSIONS[f.type] : storageExtension(f.name);
+    const path = `tasks/${id}/${randomUUID()}.${ext}`; // never built from the user's file name
+    uploads.push({ index, path, uploadUrl: await createUploadUrl(path, TASK_BUCKET) });
+  }
+  return { uploads };
+}
+
+export async function completeTaskFiles(ctx: AuthContext, id: string, files: { path: string; name: string; type: string; size: number }[]) {
+  need(ctx, "edit");
+  const me = requireEmployee(ctx);
+  await loadForAction(ctx, id, "upload");
+  const saved: string[] = [];
+  const problems: string[] = [];
+  for (const f of files) {
+    if (!f.path.startsWith(`tasks/${id}/`) || f.path.includes("..")) { problems.push(`${f.name}: not a valid upload`); continue; }
+    const already = await prisma.resource.findFirst({ where: { storagePath: f.path }, select: { id: true } });
+    if (already) { problems.push(`${f.name}: already saved`); continue; }
+    const stat = await statObject(f.path, TASK_BUCKET);
+    if (!stat) { problems.push(`${f.name}: the upload did not finish`); continue; }
+    const head = await readHead(f.path, 32, TASK_BUCKET);
+    // The stored bytes must be what was declared; the browser's word is not enough
+    const imageOk = !f.type.startsWith("image/") || sniffImageType(head) === f.type;
+    const audioOk = !f.type.startsWith("audio/") || sniffAudioType(head, true) === f.type;
+    if (stat.size <= 0 || stat.size > maxFileBytes(f.type) || !imageOk || !audioOk) {
+      await removeObjects([f.path], TASK_BUCKET);
+      problems.push(`${f.name}: ${!imageOk ? "not a valid image" : !audioOk ? "not a valid audio file" : `empty or larger than ${maxFileLabel(f.type)}`}`);
+      continue;
+    }
+    await prisma.resource.create({
+      data: { name: f.name.slice(0, 255), storagePath: f.path, mimeType: f.type || UNKNOWN_MIME_TYPE, size: stat.size, ownerId: me, taskId: id },
+    });
+    saved.push(f.name);
+  }
+  if (saved.length) await audit(prisma, id, me, "FILE_UPLOADED", undefined, saved.join(", "));
+  return { saved, problems };
+}
+
+export async function removeTaskFile(ctx: AuthContext, id: string, fileId: string) {
+  need(ctx, "edit");
+  const me = requireEmployee(ctx);
+  await loadForAction(ctx, id, "upload");
+  const f = await prisma.resource.findFirst({ where: { id: fileId, taskId: id }, select: { id: true, storagePath: true, name: true } });
+  if (!f) throw new ServiceError(404, "File not found");
+  await prisma.resource.delete({ where: { id: f.id } });
+  await removeObjects([f.storagePath], TASK_BUCKET);
+  await audit(prisma, id, me, "FILE_REMOVED", f.name);
+}
